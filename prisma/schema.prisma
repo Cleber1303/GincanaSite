@@ -1,73 +1,52 @@
-// ─────────────────────────────────────────────────────────────
-//  Banco da Gincana — traducao do prototipo em tabelas.
-//  Equipe tem muitos Integrantes. Prova tem muitas Regras.
-//  Resultado e a ponte: liga uma Equipe a uma Prova com os
-//  pontos JA congelados (mudar a regra depois nao mexe no historico).
-// ─────────────────────────────────────────────────────────────
+// Regras puras: sem UI, sem banco. Faceis de testar isoladamente.
 
-generator client {
-  provider = "prisma-client-js"
+export const TIPOS = {
+  colocacao: { label: "Colocacao" },
+  livre: { label: "Nota livre" },
+  binaria: { label: "Participou" },
+  bonus: { label: "Bonus / penalidade" },
+};
+
+// Arredonda para 2 casas, matando o ruido de ponto flutuante do JS
+// (ex: 9.8 * 2.7 = 26.460000000000004 -> 26.46).
+const arredonda = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// Pontos de UM lancamento, conforme o tipo da prova.
+export function calcularPontos(prova, lancamento) {
+  const peso = prova.peso ?? 1;
+  switch (prova.tipo) {
+    case "colocacao": {
+      const regra = prova.regras.find((r) => r.posicao === lancamento.posicao);
+      return arredonda((regra ? regra.pontos : 0) * peso);
+    }
+    case "livre":
+      return arredonda((Number(lancamento.valor) || 0) * peso);
+    case "binaria":
+      return arredonda((lancamento.valor ? prova.pontosCumprir : 0) * peso);
+    case "bonus":
+      return arredonda(Number(lancamento.valor) || 0);
+    default:
+      return 0;
+  }
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-model Equipe {
-  id          String       @id @default(cuid())
-  nome        String
-  cor         String
-  criadoEm    DateTime     @default(now())
-
-  integrantes Integrante[]
-  resultados  Resultado[]
-}
-
-model Integrante {
-  id       String  @id @default(cuid())
-  nome     String
-  lider    Boolean @default(false)
-
-  equipe   Equipe  @relation(fields: [equipeId], references: [id], onDelete: Cascade)
-  equipeId String
-}
-
-model Prova {
-  id            String           @id @default(cuid())
-  nome          String
-  descricao     String?
-  tipo          String           // "colocacao" | "livre" | "binaria" | "bonus"
-  peso          Float            @default(1)
-  pontosCumprir Int              @default(0)   // usado so no tipo "binaria"
-  status        String           @default("aberta") // "aberta" | "encerrada"
-  criadoEm      DateTime         @default(now())
-
-  regras        RegraColocacao[]
-  resultados    Resultado[]
-}
-
-model RegraColocacao {
-  id       String @id @default(cuid())
-  posicao  Int    // 1, 2, 3...
-  pontos   Int
-
-  prova    Prova  @relation(fields: [provaId], references: [id], onDelete: Cascade)
-  provaId  String
-}
-
-model Resultado {
-  id        String   @id @default(cuid())
-  posicao   Int?     // preenchido no tipo "colocacao"
-  valor     String?  // nota livre, bonus, ou "true"/"false" no binaria
-  pontos    Int      // pontos ja calculados e congelados
-  criadoEm  DateTime @default(now())
-
-  prova     Prova    @relation(fields: [provaId], references: [id], onDelete: Cascade)
-  provaId   String
-  equipe    Equipe   @relation(fields: [equipeId], references: [id], onDelete: Cascade)
-  equipeId  String
-
-  @@index([provaId])
-  @@index([equipeId])
+// Soma os pontos congelados de cada equipe e ordena, tratando empate.
+// Arredonda a soma tambem, pois somar decimais reintroduz o ruido.
+export function calcularRanking(equipes, resultados) {
+  const tabela = equipes.map((e) => ({
+    ...e,
+    pontos: arredonda(
+      resultados.filter((r) => r.equipeId === e.id).reduce((s, r) => s + r.pontos, 0)
+    ),
+  }));
+  tabela.sort((a, b) => b.pontos - a.pontos || a.nome.localeCompare(b.nome));
+  let pos = 0;
+  let anterior = null;
+  return tabela.map((t, i) => {
+    if (t.pontos !== anterior) {
+      pos = i + 1;
+      anterior = t.pontos;
+    }
+    return { ...t, posicao: pos };
+  });
 }
