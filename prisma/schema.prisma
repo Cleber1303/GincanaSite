@@ -1,0 +1,73 @@
+// ─────────────────────────────────────────────────────────────
+//  Banco da Gincana — traducao do prototipo em tabelas.
+//  Equipe tem muitos Integrantes. Prova tem muitas Regras.
+//  Resultado e a ponte: liga uma Equipe a uma Prova com os
+//  pontos JA congelados (mudar a regra depois nao mexe no historico).
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Equipe {
+  id          String       @id @default(cuid())
+  nome        String
+  cor         String
+  criadoEm    DateTime     @default(now())
+
+  integrantes Integrante[]
+  resultados  Resultado[]
+}
+
+model Integrante {
+  id       String  @id @default(cuid())
+  nome     String
+  lider    Boolean @default(false)
+
+  equipe   Equipe  @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  equipeId String
+}
+
+model Prova {
+  id            String           @id @default(cuid())
+  nome          String
+  descricao     String?
+  tipo          String           // "colocacao" | "livre" | "binaria" | "bonus"
+  peso          Float            @default(1)
+  pontosCumprir Int              @default(0)   // usado so no tipo "binaria"
+  status        String           @default("aberta") // "aberta" | "encerrada"
+  criadoEm      DateTime         @default(now())
+
+  regras        RegraColocacao[]
+  resultados    Resultado[]
+}
+
+model RegraColocacao {
+  id       String @id @default(cuid())
+  posicao  Int    // 1, 2, 3...
+  pontos   Int
+
+  prova    Prova  @relation(fields: [provaId], references: [id], onDelete: Cascade)
+  provaId  String
+}
+
+model Resultado {
+  id        String   @id @default(cuid())
+  posicao   Int?     // preenchido no tipo "colocacao"
+  valor     String?  // nota livre, bonus, ou "true"/"false" no binaria
+  pontos    Int      // pontos ja calculados e congelados
+  criadoEm  DateTime @default(now())
+
+  prova     Prova    @relation(fields: [provaId], references: [id], onDelete: Cascade)
+  provaId   String
+  equipe    Equipe   @relation(fields: [equipeId], references: [id], onDelete: Cascade)
+  equipeId  String
+
+  @@index([provaId])
+  @@index([equipeId])
+}
