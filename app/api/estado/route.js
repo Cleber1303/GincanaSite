@@ -2,8 +2,32 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { tokenValido } from "@/lib/auth";
 
-// GET /api/estado  — publico. Le tudo e monta o mesmo formato que a tela usa.
-export async function GET() {
+// A resposta muda conforme login, entao nunca pode ser cacheada.
+export const dynamic = "force-dynamic";
+
+// Calcula posicoes (1o, 2o...) a partir dos pontos, com empate na mesma posicao.
+// Recebe uma lista de { id, pontos } e devolve um mapa id -> posicao.
+function posicoesPorPontos(itens) {
+  const ordenado = [...itens].sort((a, b) => b.pontos - a.pontos);
+  const mapa = {};
+  let pos = 0;
+  let anterior = null;
+  ordenado.forEach((it, i) => {
+    if (it.pontos !== anterior) {
+      pos = i + 1;
+      anterior = it.pontos;
+    }
+    mapa[it.id] = pos;
+  });
+  return mapa;
+}
+
+// GET /api/estado
+//  - Professor logado: manda tudo (pontos, totais).
+//  - Publico: manda so as colocacoes (geral e por prova), sem os numeros.
+export async function GET(request) {
+  const logado = tokenValido(request);
+
   const [equipesDb, provasDb, resultadosDb] = await Promise.all([
     prisma.equipe.findMany({ include: { integrantes: true }, orderBy: { criadoEm: "asc" } }),
     prisma.prova.findMany({ include: { regras: { orderBy: { posicao: "asc" } } }, orderBy: { criadoEm: "asc" } }),
@@ -28,21 +52,52 @@ export async function GET() {
     diaRotulo: p.diaRotulo ?? null,
     diaData: p.diaData ?? null,
     horario: p.horario ?? null,
-    regras: p.regras.map((r) => ({ posicao: r.posicao, pontos: r.pontos })),
+    // regras (pontos por posicao) sao configuracao sensivel: so pro professor.
+    regras: logado ? p.regras.map((r) => ({ posicao: r.posicao, pontos: r.pontos })) : [],
   }));
 
-  const resultados = resultadosDb.map((r) => ({
-    id: r.id,
-    provaId: r.provaId,
-    equipeId: r.equipeId,
-    posicao: r.posicao,
-    // valor foi guardado como JSON (numero, booleano ou null) para round-trip fiel
-    valor: r.valor == null ? null : JSON.parse(r.valor),
-    pontos: r.pontos,
-    criadoEm: r.criadoEm,
-  }));
+  // ── Professor: manda tudo como esta ──
+  if (logado) {
+    const resultados = resultadosDb.map((r) => ({
+      id: r.id,
+      provaId: r.provaId,
+      equipeId: r.equipeId,
+      posicao: r.posicao,
+      valor: r.valor == null ? null : JSON.parse(r.valor),
+      pontos: r.pontos,
+      criadoEm: r.criadoEm,
+    }));
+    return NextResponse.json({ equipes, provas, resultados, publico: false });
+  }
 
-  return NextResponse.json({ equipes, provas, resultados });
+  // ── Publico: calcula colocacoes, remove os pontos ──
+
+  // Colocacao geral: soma dos pontos por equipe.
+  const totais = equipes.map((e) => ({
+    id: e.id,
+    pontos: resultadosDb.filter((r) => r.equipeId === e.id).reduce((s, r) => s + r.pontos, 0),
+  }));
+  const posGeral = posicoesPorPontos(totais);
+  const equipesPublic = equipes.map((e) => ({ ...e, posicaoGeral: posGeral[e.id] ?? null }));
+
+  // Colocacao por prova: ordena as equipes daquela prova pelos pontos.
+  const resultados = [];
+  for (const p of provasDb) {
+    const daProva = resultadosDb.filter((r) => r.provaId === p.id);
+    const pos = posicoesPorPontos(daProva.map((r) => ({ id: r.equipeId, pontos: r.pontos })));
+    for (const r of daProva) {
+      resultados.push({
+        id: r.id,
+        provaId: r.provaId,
+        equipeId: r.equipeId,
+        posicao: pos[r.equipeId] ?? null,
+        // pontos e valor ficam de fora: o publico nao os recebe.
+        criadoEm: r.criadoEm,
+      });
+    }
+  }
+
+  return NextResponse.json({ equipes: equipesPublic, provas, resultados, publico: true });
 }
 
 // PUT /api/estado  — so admin. Recebe o estado inteiro e regrava.

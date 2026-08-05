@@ -56,11 +56,15 @@ function agruparPorDia(provas) {
    ══════════════════════════════════════════════════════════════ */
 
 const CHAVE_TOKEN = "gincana:token";
-const VAZIO = { equipes: [], provas: [], resultados: [] };
+const VAZIO = { equipes: [], provas: [], resultados: [], publico: true };
 
 const repo = {
-  async carregar() {
-    const r = await fetch("/api/estado");
+  async carregar(token) {
+    const r = await fetch("/api/estado", {
+      // manda o token quando logado: o servidor devolve os pontos so ao professor
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      cache: "no-store",
+    });
     if (!r.ok) throw new Error("Nao foi possivel carregar a gincana.");
     return r.json();
   },
@@ -125,7 +129,7 @@ export default function Gincana() {
     const salvo = typeof window !== "undefined" ? localStorage.getItem(CHAVE_TOKEN) : null;
     if (salvo) setToken(salvo);
     repo
-      .carregar()
+      .carregar(salvo)
       .then((e) => setEstado(e))
       .catch(() => {})
       .finally(() => setPronto(true));
@@ -136,12 +140,16 @@ export default function Gincana() {
     if (!novoToken) return false;
     localStorage.setItem(CHAVE_TOKEN, novoToken);
     setToken(novoToken);
+    // rebusca ja logado: agora o servidor devolve os pontos
+    repo.carregar(novoToken).then(setEstado).catch(() => {});
     return true;
   };
 
   const sair = () => {
     localStorage.removeItem(CHAVE_TOKEN);
     setToken(null);
+    // rebusca deslogado: servidor devolve so as colocacoes
+    repo.carregar(null).then(setEstado).catch(() => {});
   };
 
   // Atualiza a tela na hora (otimista) e grava no servidor. Se falhar,
@@ -157,12 +165,23 @@ export default function Gincana() {
       } else {
         alert("Nao foi possivel salvar. Verifique a conexao.");
       }
-      repo.carregar().then(setEstado).catch(() => {});
+      repo.carregar(token).then(setEstado).catch(() => {});
     }
   };
 
   const { equipes, provas, resultados } = estado;
-  const ranking = useMemo(() => calcularRanking(equipes, resultados), [equipes, resultados]);
+  const publico = estado.publico === true;
+
+  // No modo publico o servidor manda so as colocacoes (posicaoGeral por equipe),
+  // sem pontos. No modo professor, calculamos o ranking normalmente pelos pontos.
+  const ranking = useMemo(() => {
+    if (publico) {
+      return [...equipes]
+        .map((e) => ({ ...e, posicao: e.posicaoGeral ?? 999, pontos: null }))
+        .sort((a, b) => a.posicao - b.posicao || a.nome.localeCompare(b.nome));
+    }
+    return calcularRanking(equipes, resultados);
+  }, [equipes, resultados, publico]);
 
   const salvarEquipe = (eq) =>
     atualizar({
@@ -286,14 +305,16 @@ export default function Gincana() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline justify-between gap-2 mb-1.5">
                       <span className="font-semibold truncate">{e.nome}</span>
-                      <span className="placar text-xl shrink-0">{e.pontos}</span>
+                      {!publico && <span className="placar text-xl shrink-0">{e.pontos}</span>}
                     </div>
-                    <div style={{ height: 8, background: C.quadra, borderRadius: 4, overflow: "hidden" }}>
-                      <div
-                        className="barra"
-                        style={{ width: `${Math.max(2, (Math.abs(e.pontos) / maior) * 100)}%`, height: "100%", background: e.cor, borderRadius: 4 }}
-                      />
-                    </div>
+                    {!publico && (
+                      <div style={{ height: 8, background: C.quadra, borderRadius: 4, overflow: "hidden" }}>
+                        <div
+                          className="barra"
+                          style={{ width: `${Math.max(2, (Math.abs(e.pontos) / maior) * 100)}%`, height: "100%", background: e.cor, borderRadius: 4 }}
+                        />
+                      </div>
+                    )}
                     <div className="mt-1.5 text-xs" style={{ color: C.fraco }}>
                       {e.integrantes.length} integrante{e.integrantes.length === 1 ? "" : "s"}
                     </div>
@@ -325,6 +346,7 @@ export default function Gincana() {
                           resultados={resultados}
                           equipes={equipes}
                           professor={professor}
+                          publico={publico}
                           onLancar={() => setModal({ t: "lancar", d: p })}
                           onEditar={() => setModal({ t: "prova", d: p })}
                           onExcluir={() => excluirProva(p.id)}
@@ -385,6 +407,7 @@ export default function Gincana() {
           equipe={modal.d}
           provas={provas}
           resultados={resultados.filter((r) => r.equipeId === modal.d.id)}
+          publico={publico}
           onFechar={() => setModal(null)}
         />
       )}
@@ -642,7 +665,7 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
   );
 }
 
-function CardProva({ prova, resultados, equipes, professor, onLancar, onEditar, onExcluir }) {
+function CardProva({ prova, resultados, equipes, professor, publico, onLancar, onEditar, onExcluir }) {
   const lancados = resultados.filter((r) => r.provaId === prova.id);
   return (
     <div className="rounded-lg p-4" style={{ background: C.papel, border: `1px solid ${C.linha}` }}>
@@ -668,18 +691,20 @@ function CardProva({ prova, resultados, equipes, professor, onLancar, onEditar, 
 
       {lancados.length > 0 && (
         <div className="mt-3 pt-3 space-y-1" style={{ borderTop: `1px solid ${C.linha}` }}>
-          {[...lancados].sort((a, b) => b.pontos - a.pontos).map((r) => {
-            const eq = equipes.find((e) => e.id === r.equipeId);
-            if (!eq) return null;
-            return (
-              <div key={r.id} className="flex items-center gap-2 text-sm">
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: eq.cor }} />
-                <span className="flex-1 truncate">{eq.nome}</span>
-                {r.posicao && <span className="rotulo" style={{ color: C.fraco }}>{r.posicao}o</span>}
-                <span className="placar text-sm">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>
-              </div>
-            );
-          })}
+          {[...lancados]
+            .sort((a, b) => (publico ? (a.posicao ?? 999) - (b.posicao ?? 999) : b.pontos - a.pontos))
+            .map((r) => {
+              const eq = equipes.find((e) => e.id === r.equipeId);
+              if (!eq) return null;
+              return (
+                <div key={r.id} className="flex items-center gap-2 text-sm">
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: eq.cor }} />
+                  <span className="flex-1 truncate">{eq.nome}</span>
+                  {r.posicao && <span className="rotulo" style={{ color: C.fraco }}>{r.posicao}o</span>}
+                  {!publico && <span className="placar text-sm">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>}
+                </div>
+              );
+            })}
         </div>
       )}
 
@@ -965,15 +990,24 @@ function FormLancamento({ prova, equipes, anteriores, onSalvar, onFechar }) {
   );
 }
 
-function DetalheEquipe({ equipe, provas, resultados, onFechar }) {
+function DetalheEquipe({ equipe, provas, resultados, publico, onFechar }) {
   const [verIntegrantes, setVerIntegrantes] = useState(false);
-  const total = resultados.reduce((s, r) => s + r.pontos, 0);
+  const total = resultados.reduce((s, r) => s + (r.pontos || 0), 0);
   return (
     <Modal titulo={equipe.nome} onFechar={onFechar}>
-      <div className="rounded-lg p-4 mb-4 flex items-baseline justify-between" style={{ background: equipe.cor, color: C.papel }}>
-        <span className="rotulo">Total</span>
-        <span className="placar text-3xl">{total}</span>
-      </div>
+      {publico ? (
+        equipe.posicaoGeral && (
+          <div className="rounded-lg p-4 mb-4 flex items-baseline justify-between" style={{ background: equipe.cor, color: C.papel }}>
+            <span className="rotulo">Colocacao geral</span>
+            <span className="placar text-3xl">{equipe.posicaoGeral}o</span>
+          </div>
+        )
+      ) : (
+        <div className="rounded-lg p-4 mb-4 flex items-baseline justify-between" style={{ background: equipe.cor, color: C.papel }}>
+          <span className="rotulo">Total</span>
+          <span className="placar text-3xl">{total}</span>
+        </div>
+      )}
 
       <button
         onClick={() => setVerIntegrantes(!verIntegrantes)}
@@ -1002,9 +1036,9 @@ function DetalheEquipe({ equipe, provas, resultados, onFechar }) {
       )}
       {!verIntegrantes && <div className="mb-5" />}
 
-      <span className="rotulo block mb-2" style={{ color: C.fraco }}>Pontos por prova</span>
+      <span className="rotulo block mb-2" style={{ color: C.fraco }}>{publico ? "Colocacao por prova" : "Pontos por prova"}</span>
       {resultados.length === 0 ? (
-        <p className="text-sm" style={{ color: C.fraco }}>A equipe ainda nao pontuou.</p>
+        <p className="text-sm" style={{ color: C.fraco }}>{publico ? "A equipe ainda nao tem colocacao." : "A equipe ainda nao pontuou."}</p>
       ) : (
         <div className="space-y-1">
           {resultados.map((r) => {
@@ -1014,7 +1048,7 @@ function DetalheEquipe({ equipe, provas, resultados, onFechar }) {
                 <span className="truncate">
                   {p?.nome ?? "Prova removida"}{r.posicao ? ` · ${r.posicao}o` : ""}
                 </span>
-                <span className="placar">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>
+                {!publico && <span className="placar">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>}
               </div>
             );
           })}
