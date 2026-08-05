@@ -38,7 +38,7 @@ export async function GET(request) {
     id: e.id,
     nome: e.nome,
     cor: e.cor,
-    integrantes: e.integrantes.map((i) => ({ id: i.id, nome: i.nome, lider: i.lider })),
+    integrantes: e.integrantes.map((i) => ({ id: i.id, nome: i.nome, serie: i.serie ?? null, lider: i.lider })),
   }));
 
   const provas = provasDb.map((p) => ({
@@ -126,7 +126,7 @@ export async function PUT(request) {
             nome: e.nome,
             cor: e.cor,
             integrantes: {
-              create: (e.integrantes || []).map((i) => ({ id: i.id, nome: i.nome, lider: !!i.lider })),
+              create: (e.integrantes || []).map((i) => ({ id: i.id, nome: i.nome, serie: i.serie || null, lider: !!i.lider })),
             },
           },
         });

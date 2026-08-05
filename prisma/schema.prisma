@@ -27,6 +27,7 @@ model Equipe {
 model Integrante {
   id       String  @id @default(cuid())
   nome     String
+  serie    String? // "6ano", "7ano"... ou "1serie", "2serie", "3serie"
   lider    Boolean @default(false)
 
   equipe   Equipe  @relation(fields: [equipeId], references: [id], onDelete: Cascade)
