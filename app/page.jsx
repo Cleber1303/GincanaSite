@@ -108,6 +108,18 @@ const C = {
 };
 const CORES_EQUIPE = ["#E2542A", "#2C6FB5", "#F2B01E", "#7A3FA6", "#159C6D", "#D6266A", "#0F9BB5", "#8C5A2B"];
 
+// Series disponiveis no cadastro do integrante.
+const SERIES = [
+  { valor: "6ano", label: "6o ano" },
+  { valor: "7ano", label: "7o ano" },
+  { valor: "8ano", label: "8o ano" },
+  { valor: "9ano", label: "9o ano" },
+  { valor: "1serie", label: "1a serie" },
+  { valor: "2serie", label: "2a serie" },
+  { valor: "3serie", label: "3a serie" },
+];
+const labelSerie = (v) => SERIES.find((s) => s.valor === v)?.label ?? "";
+
 // Ouro, prata, bronze — so para 1o, 2o e 3o lugar.
 const MEDALHAS = {
   1: { fundo: "#F2B01E", anel: "#B8830F", texto: "#5A3F04" },
@@ -476,7 +488,7 @@ function CardEquipe({ equipe, professor, onEditar, onExcluir }) {
                 {visiveis.map((i) => (
                   <li key={i.id} className="flex items-center gap-1.5 text-sm" style={{ color: C.medio }}>
                     {i.lider && <Crown size={13} fill={C.apito} style={{ color: C.apito }} />}
-                    <span>{i.nome}</span>
+                    <span>{i.nome}{i.serie && <span style={{ color: C.fraco }}> · {labelSerie(i.serie)}</span>}</span>
                   </li>
                 ))}
               </ul>
@@ -582,11 +594,13 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
   const [cor, setCor] = useState(equipe?.cor ?? CORES_EQUIPE.find((c) => !usadas.includes(c)) ?? CORES_EQUIPE[0]);
   const [integrantes, setIntegrantes] = useState(equipe?.integrantes ?? []);
   const [novo, setNovo] = useState("");
+  const [novaSerie, setNovaSerie] = useState("");
 
   const addIntegrante = () => {
-    if (!novo.trim()) return;
-    setIntegrantes([...integrantes, { id: novoId(), nome: novo.trim() }]);
+    if (!novo.trim() || !novaSerie) return;
+    setIntegrantes([...integrantes, { id: novoId(), nome: novo.trim(), serie: novaSerie }]);
     setNovo("");
+    setNovaSerie("");
   };
 
   return (
@@ -635,10 +649,26 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
           onChange={(e) => setNovo(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addIntegrante()}
           placeholder="Nome do integrante"
-          className="flex-1 px-3 py-2.5 rounded-md text-sm"
+          className="flex-1 px-3 py-2.5 rounded-md text-sm min-w-0"
           style={{ background: C.quadra, border: `1px solid ${C.linha}` }}
         />
-        <button onClick={addIntegrante} className="px-3 rounded-md" style={{ background: C.pinho, color: C.papel }}>
+        <select
+          value={novaSerie}
+          onChange={(e) => setNovaSerie(e.target.value)}
+          className="px-2 py-2.5 rounded-md text-sm shrink-0"
+          style={{ background: C.quadra, border: `1px solid ${C.linha}`, color: novaSerie ? C.tinta : C.fraco }}
+        >
+          <option value="">Serie</option>
+          {SERIES.map((s) => (
+            <option key={s.valor} value={s.valor}>{s.label}</option>
+          ))}
+        </select>
+        <button
+          onClick={addIntegrante}
+          disabled={!novo.trim() || !novaSerie}
+          className="px-3 rounded-md shrink-0"
+          style={{ background: !novo.trim() || !novaSerie ? C.linha : C.pinho, color: C.papel }}
+        >
           <Plus size={16} />
         </button>
       </div>
@@ -646,6 +676,18 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
         {integrantes.map((i) => (
           <div key={i.id} className="flex items-center gap-2 px-3 py-2 rounded-md text-sm" style={{ background: C.quadra }}>
             <span className="flex-1 truncate">{i.nome}</span>
+            <select
+              value={i.serie ?? ""}
+              onChange={(e) => setIntegrantes(integrantes.map((x) => (x.id === i.id ? { ...x, serie: e.target.value || null } : x)))}
+              title="Serie"
+              className="px-1.5 py-1 rounded text-xs shrink-0"
+              style={{ background: C.papel, border: `1px solid ${i.serie ? C.linha : C.apito}`, color: i.serie ? C.tinta : C.fraco }}
+            >
+              <option value="">Serie?</option>
+              {SERIES.map((s) => (
+                <option key={s.valor} value={s.valor}>{s.label}</option>
+              ))}
+            </select>
             <button
               onClick={() => setIntegrantes(integrantes.map((x) => (x.id === i.id ? { ...x, lider: !x.lider } : x)))}
               title={i.lider ? "Remover como lider" : "Marcar como lider"}
@@ -660,7 +702,15 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
         ))}
       </div>
 
-      <Confirmar onClick={() => nome.trim() && onSalvar({ ...equipe, nome: nome.trim(), cor, integrantes })} />
+      {integrantes.some((i) => !i.serie) && (
+        <p className="text-xs mb-2" style={{ color: C.apito }}>
+          Defina a serie de todos os integrantes (os marcados em vermelho).
+        </p>
+      )}
+      <Confirmar
+        onClick={() => nome.trim() && onSalvar({ ...equipe, nome: nome.trim(), cor, integrantes })}
+        desabilitado={!nome.trim() || integrantes.some((i) => !i.serie)}
+      />
     </Modal>
   );
 }
@@ -1026,7 +1076,7 @@ function DetalheEquipe({ equipe, provas, resultados, publico, onFechar }) {
               .map((i) => (
                 <span key={i.id} className="px-2.5 py-1 rounded-full text-sm flex items-center gap-1" style={{ background: C.quadra }}>
                   {i.lider && <Crown size={12} fill={C.apito} style={{ color: C.apito }} />}
-                  {i.nome}
+                  {i.nome}{i.serie && <span style={{ color: C.fraco }}> · {labelSerie(i.serie)}</span>}
                 </span>
               ))
           ) : (
