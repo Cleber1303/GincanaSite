@@ -25,6 +25,9 @@ export async function GET() {
     peso: p.peso,
     pontosCumprir: p.pontosCumprir,
     status: p.status,
+    diaRotulo: p.diaRotulo ?? null,
+    diaData: p.diaData ?? null,
+    horario: p.horario ?? null,
     regras: p.regras.map((r) => ({ posicao: r.posicao, pontos: r.pontos })),
   }));
 
@@ -84,6 +87,9 @@ export async function PUT(request) {
             peso: Number(p.peso) || 1,
             pontosCumprir: Number(p.pontosCumprir) || 0,
             status: p.status || "aberta",
+            diaRotulo: p.diaRotulo || null,
+            diaData: p.diaData || null,
+            horario: p.horario || null,
             regras: {
               create: (p.regras || []).map((r) => ({ posicao: Number(r.posicao), pontos: Number(r.pontos) || 0 })),
             },

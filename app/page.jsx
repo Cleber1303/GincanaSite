@@ -5,6 +5,53 @@ import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRi
 import { TIPOS, calcularPontos, calcularRanking } from "@/lib/pontuacao";
 
 /* ══════════════════════════════════════════════════════════════
+   DIAS — guardados na propria prova (diaRotulo + diaData).
+   ══════════════════════════════════════════════════════════════ */
+
+// "YYYY-MM-DD" -> "DD/MM/YYYY" sem depender de fuso.
+function formatarData(iso) {
+  if (!iso) return "";
+  const [a, m, d] = String(iso).slice(0, 10).split("-");
+  return d && m && a ? `${d}/${m}/${a}` : String(iso);
+}
+
+// Lista os dias ja existentes (pares rotulo+data unicos), ordenados por data.
+function diasExistentes(provas) {
+  const mapa = new Map();
+  for (const p of provas) {
+    if (p.diaRotulo) {
+      const chave = `${p.diaRotulo}|${p.diaData || ""}`;
+      if (!mapa.has(chave)) mapa.set(chave, { rotulo: p.diaRotulo, data: p.diaData || "" });
+    }
+  }
+  return [...mapa.values()].sort((a, b) => String(a.data).localeCompare(String(b.data)));
+}
+
+// Ordena provas por horario (mais cedo primeiro); sem horario vai pro fim.
+function ordenarPorHorario(provas) {
+  return [...provas].sort((a, b) => {
+    if (!a.horario && !b.horario) return 0;
+    if (!a.horario) return 1;
+    if (!b.horario) return -1;
+    return a.horario.localeCompare(b.horario);
+  });
+}
+
+// Agrupa as provas por dia. "Sem dia" primeiro, depois os dias por data.
+// Grupo vazio nao existe: os grupos nascem das proprias provas.
+function agruparPorDia(provas) {
+  const semDia = provas.filter((p) => !p.diaRotulo);
+  const grupos = [];
+  if (semDia.length) grupos.push({ chave: "__sem__", rotulo: "Sem dia", data: "", provas: ordenarPorHorario(semDia) });
+
+  for (const dia of diasExistentes(provas)) {
+    const doDia = provas.filter((p) => p.diaRotulo === dia.rotulo && (p.diaData || "") === dia.data);
+    grupos.push({ chave: `${dia.rotulo}|${dia.data}`, rotulo: dia.rotulo, data: dia.data, provas: ordenarPorHorario(doDia) });
+  }
+  return grupos;
+}
+
+/* ══════════════════════════════════════════════════════════════
    REPOSITORIO — conversa com a API. Leitura publica, escrita com token.
    ══════════════════════════════════════════════════════════════ */
 
@@ -263,66 +310,29 @@ export default function Gincana() {
             {provas.length === 0 ? (
               <Vazio texto="Nenhuma prova cadastrada. Crie a primeira para lancar pontos." />
             ) : (
-              <div className="space-y-2.5 mt-3">
-                {provas.map((p) => {
-                  const lancados = resultados.filter((r) => r.provaId === p.id);
-                  return (
-                    <div key={p.id} className="rounded-lg p-4" style={{ background: C.papel, border: `1px solid ${C.linha}` }}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="rotulo" style={{ color: C.fraco }}>
-                            {TIPOS[p.tipo].label}
-                            {p.tipo !== "bonus" && p.peso !== 1 ? ` · peso ${p.peso}x` : ""}
-                          </div>
-                          <div className="font-semibold mt-0.5">{p.nome}</div>
-                          {p.descricao && (
-                            <div className="text-sm mt-0.5" style={{ color: C.fraco }}>{p.descricao}</div>
-                          )}
-                        </div>
-                        <span
-                          className="rotulo px-2 py-1 rounded shrink-0"
-                          style={{
-                            background: p.status === "encerrada" ? C.pinho : C.quadra,
-                            color: p.status === "encerrada" ? C.papel : C.fraco,
-                          }}
-                        >
-                          {p.status === "encerrada" ? "Encerrada" : "Aberta"}
-                        </span>
-                      </div>
-
-                      {lancados.length > 0 && (
-                        <div className="mt-3 pt-3 space-y-1" style={{ borderTop: `1px solid ${C.linha}` }}>
-                          {[...lancados].sort((a, b) => b.pontos - a.pontos).map((r) => {
-                            const eq = equipes.find((e) => e.id === r.equipeId);
-                            if (!eq) return null;
-                            return (
-                              <div key={r.id} className="flex items-center gap-2 text-sm">
-                                <span style={{ width: 8, height: 8, borderRadius: 2, background: eq.cor }} />
-                                <span className="flex-1 truncate">{eq.nome}</span>
-                                {r.posicao && <span className="rotulo" style={{ color: C.fraco }}>{r.posicao}o</span>}
-                                <span className="placar text-sm">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {professor && (
-                        <div className="flex gap-2 mt-3">
-                          <button
-                            onClick={() => setModal({ t: "lancar", d: p })}
-                            className="flex-1 py-2 rounded-md text-sm font-semibold flex items-center justify-center gap-1.5"
-                            style={{ background: C.pinho, color: C.papel }}
-                          >
-                            <Medal size={14} /> {lancados.length ? "Refazer lancamento" : "Lancar resultado"}
-                          </button>
-                          <IconBtn onClick={() => setModal({ t: "prova", d: p })}><Pencil size={15} /></IconBtn>
-                          <IconBtn onClick={() => excluirProva(p.id)} perigo><Trash2 size={15} /></IconBtn>
-                        </div>
-                      )}
+              <div className="mt-3 space-y-6">
+                {agruparPorDia(provas).map((grupo) => (
+                  <div key={grupo.chave}>
+                    <div className="flex items-baseline gap-2 mb-2.5">
+                      <h2 className="placar text-lg">{grupo.rotulo}</h2>
+                      {grupo.data && <span className="rotulo" style={{ color: C.fraco }}>{formatarData(grupo.data)}</span>}
                     </div>
-                  );
-                })}
+                    <div className="space-y-2.5">
+                      {grupo.provas.map((p) => (
+                        <CardProva
+                          key={p.id}
+                          prova={p}
+                          resultados={resultados}
+                          equipes={equipes}
+                          professor={professor}
+                          onLancar={() => setModal({ t: "lancar", d: p })}
+                          onEditar={() => setModal({ t: "prova", d: p })}
+                          onExcluir={() => excluirProva(p.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </>
@@ -359,7 +369,7 @@ export default function Gincana() {
         />
       )}
       {modal?.t === "prova" && (
-        <FormProva prova={modal.d} onSalvar={(p) => { salvarProva(p); setModal(null); }} onFechar={() => setModal(null)} />
+        <FormProva prova={modal.d} provas={provas} onSalvar={(p) => { salvarProva(p); setModal(null); }} onFechar={() => setModal(null)} />
       )}
       {modal?.t === "lancar" && (
         <FormLancamento
@@ -622,7 +632,65 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
   );
 }
 
-function FormProva({ prova, onSalvar, onFechar }) {
+function CardProva({ prova, resultados, equipes, professor, onLancar, onEditar, onExcluir }) {
+  const lancados = resultados.filter((r) => r.provaId === prova.id);
+  return (
+    <div className="rounded-lg p-4" style={{ background: C.papel, border: `1px solid ${C.linha}` }}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="rotulo" style={{ color: C.fraco }}>
+            {prova.horario ? `${prova.horario} · ` : ""}{TIPOS[prova.tipo].label}
+            {prova.tipo !== "bonus" && prova.peso !== 1 ? ` · peso ${prova.peso}x` : ""}
+          </div>
+          <div className="font-semibold mt-0.5">{prova.nome}</div>
+          {prova.descricao && <div className="text-sm mt-0.5" style={{ color: C.fraco }}>{prova.descricao}</div>}
+        </div>
+        <span
+          className="rotulo px-2 py-1 rounded shrink-0"
+          style={{
+            background: prova.status === "encerrada" ? C.pinho : C.quadra,
+            color: prova.status === "encerrada" ? C.papel : C.fraco,
+          }}
+        >
+          {prova.status === "encerrada" ? "Encerrada" : "Aberta"}
+        </span>
+      </div>
+
+      {lancados.length > 0 && (
+        <div className="mt-3 pt-3 space-y-1" style={{ borderTop: `1px solid ${C.linha}` }}>
+          {[...lancados].sort((a, b) => b.pontos - a.pontos).map((r) => {
+            const eq = equipes.find((e) => e.id === r.equipeId);
+            if (!eq) return null;
+            return (
+              <div key={r.id} className="flex items-center gap-2 text-sm">
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: eq.cor }} />
+                <span className="flex-1 truncate">{eq.nome}</span>
+                {r.posicao && <span className="rotulo" style={{ color: C.fraco }}>{r.posicao}o</span>}
+                <span className="placar text-sm">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {professor && (
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={onLancar}
+            className="flex-1 py-2 rounded-md text-sm font-semibold flex items-center justify-center gap-1.5"
+            style={{ background: C.pinho, color: C.papel }}
+          >
+            <Medal size={14} /> {lancados.length ? "Refazer lancamento" : "Lancar resultado"}
+          </button>
+          <IconBtn onClick={onEditar}><Pencil size={15} /></IconBtn>
+          <IconBtn onClick={onExcluir} perigo><Trash2 size={15} /></IconBtn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FormProva({ prova, provas = [], onSalvar, onFechar }) {
   const [f, setF] = useState(
     prova ?? {
       nome: "",
@@ -630,6 +698,9 @@ function FormProva({ prova, onSalvar, onFechar }) {
       tipo: "colocacao",
       peso: 1,
       status: "aberta",
+      diaRotulo: null,
+      diaData: null,
+      horario: "",
       regras: [
         { posicao: 1, pontos: 50 },
         { posicao: 2, pontos: 30 },
@@ -640,10 +711,79 @@ function FormProva({ prova, onSalvar, onFechar }) {
   );
   const set = (k, v) => setF({ ...f, [k]: v });
 
+  // Dias que ja existem (para reaproveitar) + controle do "+ Novo dia".
+  const dias = diasExistentes(provas);
+  const valorDiaAtual = f.diaRotulo ? `${f.diaRotulo}|${f.diaData || ""}` : "";
+  const [criandoDia, setCriandoDia] = useState(false);
+  const [novoRotulo, setNovoRotulo] = useState("");
+  const [novaData, setNovaData] = useState("");
+
+  const escolherDia = (valor) => {
+    if (valor === "__novo__") {
+      setCriandoDia(true);
+      setF({ ...f, diaRotulo: null, diaData: null });
+    } else if (valor === "") {
+      setCriandoDia(false);
+      setF({ ...f, diaRotulo: null, diaData: null });
+    } else {
+      setCriandoDia(false);
+      const [rotulo, data] = valor.split("|");
+      setF({ ...f, diaRotulo: rotulo, diaData: data || null });
+    }
+  };
+
   return (
     <Modal titulo={prova ? "Editar prova" : "Nova prova"} onFechar={onFechar}>
       <Campo rotulo="Nome da prova" value={f.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Cabo de guerra" />
       <Campo rotulo="Descricao (opcional)" value={f.descricao} onChange={(e) => set("descricao", e.target.value)} placeholder="Quadra, 14h" />
+
+      <div className="mb-3">
+        <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Dia</span>
+        <select
+          value={criandoDia ? "__novo__" : valorDiaAtual}
+          onChange={(e) => escolherDia(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-md text-sm"
+          style={{ background: C.quadra, border: `1px solid ${C.linha}` }}
+        >
+          <option value="">Sem dia</option>
+          {dias.map((d) => (
+            <option key={`${d.rotulo}|${d.data}`} value={`${d.rotulo}|${d.data}`}>
+              {d.rotulo}{d.data ? ` — ${formatarData(d.data)}` : ""}
+            </option>
+          ))}
+          <option value="__novo__">+ Novo dia</option>
+        </select>
+
+        {criandoDia && (
+          <div className="mt-2 p-3 rounded-md space-y-2" style={{ background: C.quadra }}>
+            <input
+              value={novoRotulo}
+              onChange={(e) => setNovoRotulo(e.target.value)}
+              placeholder="Rotulo do dia (ex: Dia 1)"
+              className="w-full px-3 py-2 rounded-md text-sm"
+              style={{ background: C.papel, border: `1px solid ${C.linha}`, color: C.tinta }}
+            />
+            <input
+              type="date"
+              value={novaData}
+              onChange={(e) => setNovaData(e.target.value)}
+              className="w-full px-3 py-2 rounded-md text-sm"
+              style={{ background: C.papel, border: `1px solid ${C.linha}`, color: C.tinta }}
+            />
+          </div>
+        )}
+      </div>
+
+      <label className="block mb-3">
+        <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Horario (opcional)</span>
+        <input
+          type="time"
+          value={f.horario || ""}
+          onChange={(e) => set("horario", e.target.value)}
+          className="w-full px-3 py-2.5 rounded-md text-sm"
+          style={{ background: C.quadra, border: `1px solid ${C.linha}`, color: C.tinta }}
+        />
+      </label>
 
       <label className="block mb-3">
         <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Como pontua</span>
@@ -698,11 +838,16 @@ function FormProva({ prova, onSalvar, onFechar }) {
       <Confirmar
         onClick={() => {
           if (!f.nome.trim()) return;
+          // Se estava criando um dia novo, usa o que foi digitado.
+          const diaRotulo = criandoDia ? (novoRotulo.trim() || null) : f.diaRotulo;
+          const diaData = criandoDia ? (novoRotulo.trim() ? novaData || null : null) : f.diaData;
           onSalvar({
             ...f,
             nome: f.nome.trim(),
             peso: Number(f.peso) || 1,
             pontosCumprir: Number(f.pontosCumprir) || 0,
+            diaRotulo,
+            diaData,
             regras: f.regras.map((r) => ({ ...r, pontos: Number(r.pontos) || 0 })),
           });
         }}

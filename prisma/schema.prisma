@@ -39,9 +39,15 @@ model Prova {
   descricao     String?
   tipo          String           // "colocacao" | "livre" | "binaria" | "bonus"
   peso          Float            @default(1)
-  pontosCumprir Float            @default(0)   // usado so no tipo "binaria"
+  pontosCumprir Float              @default(0)   // usado so no tipo "binaria"
   status        String           @default("aberta") // "aberta" | "encerrada"
   criadoEm      DateTime         @default(now())
+
+  // Dia da prova, guardado na propria prova (rotulo + data ISO "YYYY-MM-DD").
+  // Sem tabela separada: o dia "vive" atraves das provas e some quando nao ha nenhuma.
+  diaRotulo     String?
+  diaData       String?
+  horario       String?          // "HH:MM" opcional; sem horario vai pro fim do dia
 
   regras        RegraColocacao[]
   resultados    Resultado[]
@@ -60,7 +66,7 @@ model Resultado {
   id        String   @id @default(cuid())
   posicao   Int?     // preenchido no tipo "colocacao"
   valor     String?  // nota livre, bonus, ou "true"/"false" no binaria
-  pontos    Float    // pontos ja calculados e congelados (aceita decimais por causa do peso)
+  pontos    Float    // pontos ja calculados e congelados
   criadoEm  DateTime @default(now())
 
   prova     Prova    @relation(fields: [provaId], references: [id], onDelete: Cascade)
