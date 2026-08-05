@@ -263,15 +263,18 @@ export default function Gincana() {
       `}</style>
 
       <header style={{ background: C.pinho, borderBottom: `4px solid ${C.papel}` }}>
-        <div className="max-w-3xl mx-auto px-5 pt-6 pb-5 flex items-end justify-between">
-          <div>
-            <div className="rotulo" style={{ color: C.menta }}>Placar ao vivo</div>
-            <h1 className="placar text-3xl leading-none mt-1" style={{ color: C.papel }}>GINCANA</h1>
-          </div>
+        <div className="max-w-3xl mx-auto px-5 pt-5 flex items-start justify-between gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo-gincana.png"
+            alt="Gincana do Sagrado"
+            className="h-12 sm:h-14 w-auto"
+            style={{ maxWidth: "70%" }}
+          />
           {professor ? (
             <button
               onClick={sair}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0"
               style={{ background: C.apito, color: C.papel }}
             >
               <LogOut size={13} /> Sair
@@ -279,12 +282,16 @@ export default function Gincana() {
           ) : (
             <button
               onClick={() => setModal({ t: "login" })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0"
               style={{ background: C.pinhoEsc, color: C.papel }}
             >
               <LogIn size={13} /> Entrar como professor
             </button>
           )}
+        </div>
+        <div className="max-w-3xl mx-auto px-5 pt-4 pb-5">
+          <div className="rotulo" style={{ color: C.menta }}>Placar ao vivo</div>
+          <h1 className="placar text-3xl leading-none mt-1" style={{ color: C.papel }}>GINCANA DO SAGRADO</h1>
         </div>
         <nav className="max-w-3xl mx-auto px-5 flex gap-1">
           {[["ranking", "Placar", Trophy], ["provas", "Provas", ClipboardList], ["equipes", "Equipes", Users]].map(([k, t, Ico]) => (
