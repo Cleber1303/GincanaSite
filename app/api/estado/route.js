@@ -111,60 +111,49 @@ export async function PUT(request) {
   const { equipes = [], provas = [], resultados = [] } = await request.json().catch(() => ({}));
 
   try {
-    await prisma.$transaction(async (tx) => {
-      // Apaga filhos antes dos pais (respeita as chaves estrangeiras).
-      await tx.resultado.deleteMany();
-      await tx.integrante.deleteMany();
-      await tx.regraColocacao.deleteMany();
-      await tx.prova.deleteMany();
-      await tx.equipe.deleteMany();
+    // Monta as listas "achatadas" (com as chaves estrangeiras) de uma vez.
+    const dadosEquipes = equipes.map((e) => ({ id: e.id, nome: e.nome, cor: e.cor }));
+    const dadosIntegrantes = equipes.flatMap((e) =>
+      (e.integrantes || []).map((i) => ({ id: i.id, nome: i.nome, serie: i.serie || null, lider: !!i.lider, equipeId: e.id }))
+    );
+    const dadosProvas = provas.map((p) => ({
+      id: p.id,
+      nome: p.nome,
+      descricao: p.descricao || null,
+      tipo: p.tipo,
+      peso: Number(p.peso) || 1,
+      pontosCumprir: Number(p.pontosCumprir) || 0,
+      status: p.status || "aberta",
+      diaRotulo: p.diaRotulo || null,
+      diaData: p.diaData || null,
+      horario: p.horario || null,
+    }));
+    const dadosRegras = provas.flatMap((p) =>
+      (p.regras || []).map((r) => ({ posicao: Number(r.posicao), pontos: Number(r.pontos) || 0, provaId: p.id }))
+    );
+    const dadosResultados = resultados.map((r) => ({
+      id: r.id,
+      provaId: r.provaId,
+      equipeId: r.equipeId,
+      posicao: r.posicao ?? null,
+      valor: r.valor == null ? null : JSON.stringify(r.valor),
+      pontos: Number(r.pontos) || 0,
+    }));
 
-      for (const e of equipes) {
-        await tx.equipe.create({
-          data: {
-            id: e.id,
-            nome: e.nome,
-            cor: e.cor,
-            integrantes: {
-              create: (e.integrantes || []).map((i) => ({ id: i.id, nome: i.nome, serie: i.serie || null, lider: !!i.lider })),
-            },
-          },
-        });
-      }
-
-      for (const p of provas) {
-        await tx.prova.create({
-          data: {
-            id: p.id,
-            nome: p.nome,
-            descricao: p.descricao || null,
-            tipo: p.tipo,
-            peso: Number(p.peso) || 1,
-            pontosCumprir: Number(p.pontosCumprir) || 0,
-            status: p.status || "aberta",
-            diaRotulo: p.diaRotulo || null,
-            diaData: p.diaData || null,
-            horario: p.horario || null,
-            regras: {
-              create: (p.regras || []).map((r) => ({ posicao: Number(r.posicao), pontos: Number(r.pontos) || 0 })),
-            },
-          },
-        });
-      }
-
-      for (const r of resultados) {
-        await tx.resultado.create({
-          data: {
-            id: r.id,
-            provaId: r.provaId,
-            equipeId: r.equipeId,
-            posicao: r.posicao ?? null,
-            valor: r.valor == null ? null : JSON.stringify(r.valor),
-            pontos: Number(r.pontos) || 0,
-          },
-        });
-      }
-    });
+    // Transacao em LOTE (nao interativa): mais rapida e estavel em serverless.
+    // Apaga tudo e recria; a ordem respeita as chaves estrangeiras.
+    await prisma.$transaction([
+      prisma.resultado.deleteMany(),
+      prisma.integrante.deleteMany(),
+      prisma.regraColocacao.deleteMany(),
+      prisma.prova.deleteMany(),
+      prisma.equipe.deleteMany(),
+      prisma.equipe.createMany({ data: dadosEquipes }),
+      prisma.integrante.createMany({ data: dadosIntegrantes }),
+      prisma.prova.createMany({ data: dadosProvas }),
+      prisma.regraColocacao.createMany({ data: dadosRegras }),
+      prisma.resultado.createMany({ data: dadosResultados }),
+    ]);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
