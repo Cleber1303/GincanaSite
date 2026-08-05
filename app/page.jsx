@@ -533,6 +533,16 @@ const Campo = ({ rotulo, ...props }) => (
   </label>
 );
 
+// Titulo de secao do formulario (agrupa campos por assunto).
+const Secao = ({ titulo, primeira }) => (
+  <div
+    className="rotulo pb-1.5 mb-3"
+    style={{ color: C.pinho, borderBottom: `1px solid ${C.linha}`, marginTop: primeira ? 0 : "1.25rem" }}
+  >
+    {titulo}
+  </div>
+);
+
 const Confirmar = ({ onClick, texto = "Salvar", desabilitado }) => (
   <button
     onClick={desabilitado ? undefined : onClick}
@@ -734,9 +744,11 @@ function FormProva({ prova, provas = [], onSalvar, onFechar }) {
 
   return (
     <Modal titulo={prova ? "Editar prova" : "Nova prova"} onFechar={onFechar}>
+      <Secao titulo="Informacoes" primeira />
       <Campo rotulo="Nome da prova" value={f.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Cabo de guerra" />
       <Campo rotulo="Descricao (opcional)" value={f.descricao} onChange={(e) => set("descricao", e.target.value)} placeholder="Quadra, 14h" />
 
+      <Secao titulo="Data e hora" />
       <div className="mb-3">
         <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Dia</span>
         <select
@@ -785,6 +797,7 @@ function FormProva({ prova, provas = [], onSalvar, onFechar }) {
         />
       </label>
 
+      <Secao titulo="Pontuacao" />
       <label className="block mb-3">
         <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Como pontua</span>
         <select
