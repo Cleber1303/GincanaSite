@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Lock, Unlock, Crown, LogIn, LogOut } from "lucide-react";
+import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Lock, Unlock, Crown, LogIn, LogOut, Loader2, Check, AlertCircle } from "lucide-react";
 import { TIPOS, calcularPontos, calcularRanking } from "@/lib/pontuacao";
 
 /* ══════════════════════════════════════════════════════════════
@@ -135,6 +135,7 @@ export default function Gincana() {
   const [aba, setAba] = useState("ranking");
   const [token, setToken] = useState(null);
   const [modal, setModal] = useState(null);
+  const [salvamento, setSalvamento] = useState("ocioso"); // ocioso | salvando | salvo | erro
   const professor = !!token;
 
   useEffect(() => {
@@ -164,20 +165,50 @@ export default function Gincana() {
     repo.carregar(null).then(setEstado).catch(() => {});
   };
 
-  // Atualiza a tela na hora (otimista) e grava no servidor. Se falhar,
-  // avisa e ressincroniza com o que esta no banco.
+  // Avisa se tentar fechar a aba enquanto ainda salva ou apos um erro.
+  useEffect(() => {
+    const aviso = (ev) => {
+      if (salvamento === "salvando" || salvamento === "erro") {
+        ev.preventDefault();
+        ev.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", aviso);
+    return () => window.removeEventListener("beforeunload", aviso);
+  }, [salvamento]);
+
+  // Atualiza a tela na hora (otimista) e grava no servidor, mostrando o status.
+  // Se falhar, tenta de novo uma vez automaticamente antes de avisar erro.
   const atualizar = async (novo) => {
     setEstado(novo);
-    try {
+    setSalvamento("salvando");
+
+    const tentar = async () => {
       await repo.salvar(novo, token);
+    };
+
+    try {
+      await tentar();
+      setSalvamento("salvo");
+      // volta a "ocioso" depois de um tempo, so pra sumir o "Salvo"
+      setTimeout(() => setSalvamento((s) => (s === "salvo" ? "ocioso" : s)), 2500);
     } catch (e) {
       if (e.message === "SESSAO_EXPIRADA") {
+        setSalvamento("erro");
         sair();
         alert("Sua sessao expirou. Entre como professor novamente.");
-      } else {
-        alert("Nao foi possivel salvar. Verifique a conexao.");
+        return;
       }
-      repo.carregar(token).then(setEstado).catch(() => {});
+      // 1 nova tentativa automatica apos 1,5s (cobre cold start / oscilacao)
+      try {
+        await new Promise((r) => setTimeout(r, 1500));
+        await tentar();
+        setSalvamento("salvo");
+        setTimeout(() => setSalvamento((s) => (s === "salvo" ? "ocioso" : s)), 2500);
+      } catch (e2) {
+        setSalvamento("erro");
+        repo.carregar(token).then(setEstado).catch(() => {});
+      }
     }
   };
 
@@ -272,13 +303,16 @@ export default function Gincana() {
             style={{ maxWidth: "70%" }}
           />
           {professor ? (
-            <button
-              onClick={sair}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0"
-              style={{ background: C.apito, color: C.papel }}
-            >
-              <LogOut size={13} /> Sair
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <IndicadorSalvamento status={salvamento} />
+              <button
+                onClick={sair}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                style={{ background: C.apito, color: C.papel }}
+              >
+                <LogOut size={13} /> Sair
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => setModal({ t: "login" })}
@@ -443,6 +477,23 @@ export default function Gincana() {
 /* ══════════════════════════════════════════════════════════════
    4. COMPONENTES
    ══════════════════════════════════════════════════════════════ */
+
+// Mostra o status da gravacao no cabecalho: salvando / salvo / erro.
+function IndicadorSalvamento({ status }) {
+  if (status === "ocioso") return null;
+  const conf = {
+    salvando: { Ico: Loader2, texto: "Salvando...", cor: "#8FBFAC", girar: true },
+    salvo: { Ico: Check, texto: "Salvo", cor: "#8FBFAC", girar: false },
+    erro: { Ico: AlertCircle, texto: "Erro ao salvar", cor: "#FFC9B8", girar: false },
+  }[status];
+  if (!conf) return null;
+  const { Ico, texto, cor, girar } = conf;
+  return (
+    <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: cor }}>
+      <Ico size={13} className={girar ? "animate-spin" : ""} /> {texto}
+    </span>
+  );
+}
 
 const IconBtn = ({ children, onClick, perigo }) => (
   <button onClick={onClick} className="p-2 rounded-md" style={{ background: C.quadra, color: perigo ? C.apito : C.fraco }}>
