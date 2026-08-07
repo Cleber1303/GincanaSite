@@ -52,6 +52,23 @@ model Prova {
 
   regras        RegraColocacao[]
   resultados    Resultado[]
+  anexos        Anexo[]
+}
+
+model Anexo {
+  id        String   @id @default(cuid())
+  titulo    String
+  descricao String?
+  fixado    Boolean  @default(false)
+  // Lista de imagens em JSON: [{ url, nome }]. Os arquivos ficam no Vercel Blob.
+  imagens   String   @default("[]")
+  criadoEm  DateTime @default(now())
+
+  // Vinculo opcional com uma prova (nulo = anexo geral, ex: cronograma).
+  prova     Prova?   @relation(fields: [provaId], references: [id], onDelete: SetNull)
+  provaId   String?
+
+  @@index([provaId])
 }
 
 model RegraColocacao {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Lock, Unlock, Crown, LogIn, LogOut, Loader2, Check, AlertCircle } from "lucide-react";
+import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Crown, LogIn, LogOut, Loader2, Check, AlertCircle, Image as ImageIcon, Star } from "lucide-react";
 import { TIPOS, calcularPontos, calcularRanking } from "@/lib/pontuacao";
 
 /* ══════════════════════════════════════════════════════════════
@@ -56,7 +56,7 @@ function agruparPorDia(provas) {
    ══════════════════════════════════════════════════════════════ */
 
 const CHAVE_TOKEN = "gincana:token";
-const VAZIO = { equipes: [], provas: [], resultados: [], publico: true };
+const VAZIO = { equipes: [], provas: [], resultados: [], anexos: [], publico: true };
 
 const repo = {
   async carregar(token) {
@@ -120,6 +120,25 @@ const SERIES = [
 ];
 const labelSerie = (v) => SERIES.find((s) => s.valor === v)?.label ?? "";
 
+// Ordem das series (decrescente): 3a -> 1a serie, depois 9o -> 6o ano.
+// Quem nao tem serie vai por ultimo.
+const ORDEM_SERIE = ["3serie", "2serie", "1serie", "9ano", "8ano", "7ano", "6ano"];
+const pesoSerie = (v) => {
+  const i = ORDEM_SERIE.indexOf(v);
+  return i === -1 ? ORDEM_SERIE.length : i;
+};
+
+// Ordena integrantes: lideres primeiro, depois por serie (decrescente),
+// e alfabetica dentro da mesma serie.
+function ordenarIntegrantes(lista) {
+  return [...lista].sort((a, b) => {
+    if (!!a.lider !== !!b.lider) return a.lider ? -1 : 1;
+    const ps = pesoSerie(a.serie) - pesoSerie(b.serie);
+    if (ps !== 0) return ps;
+    return a.nome.localeCompare(b.nome);
+  });
+}
+
 // Ouro, prata, bronze — so para 1o, 2o e 3o lugar.
 const MEDALHAS = {
   1: { fundo: "#F2B01E", anel: "#B8830F", texto: "#5A3F04" },
@@ -127,12 +146,19 @@ const MEDALHAS = {
   3: { fundo: "#CE8E52", anel: "#A56A35", texto: "#4A2E11" },
 };
 
-const novoId = () => Math.random().toString(36).slice(2, 9);
+// Id unico. Usa crypto.randomUUID (colisao praticamente impossivel);
+// se algum ambiente antigo nao tiver, cai num aleatorio bem mais longo.
+const novoId = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+};
 
 export default function Gincana() {
   const [estado, setEstado] = useState(VAZIO);
   const [pronto, setPronto] = useState(false);
   const [aba, setAba] = useState("ranking");
+  const [filtroAnexoProva, setFiltroAnexoProva] = useState(null);
+  const [anexoAberto, setAnexoAberto] = useState(null); // id do anexo em tela cheia
   const [token, setToken] = useState(null);
   const [modal, setModal] = useState(null);
   const [salvamento, setSalvamento] = useState("ocioso"); // ocioso | salvando | salvo | erro
@@ -212,7 +238,7 @@ export default function Gincana() {
     }
   };
 
-  const { equipes, provas, resultados } = estado;
+  const { equipes, provas, resultados, anexos = [] } = estado;
   const publico = estado.publico === true;
 
   // No modo publico o servidor manda so as colocacoes (posicaoGeral por equipe),
@@ -250,7 +276,21 @@ export default function Gincana() {
       ...estado,
       provas: provas.filter((p) => p.id !== pid),
       resultados: resultados.filter((r) => r.provaId !== pid),
+      // anexos ligados a essa prova viram anexos gerais (nao somem)
+      anexos: anexos.map((a) => (a.provaId === pid ? { ...a, provaId: null } : a)),
     });
+
+  const salvarAnexo = (a) =>
+    atualizar({
+      ...estado,
+      anexos: a.id ? anexos.map((x) => (x.id === a.id ? a : x)) : [...anexos, { ...a, id: novoId() }],
+    });
+
+  const excluirAnexo = (aid) =>
+    atualizar({ ...estado, anexos: anexos.filter((a) => a.id !== aid) });
+
+  const alternarFixado = (aid) =>
+    atualizar({ ...estado, anexos: anexos.map((a) => (a.id === aid ? { ...a, fixado: !a.fixado } : a)) });
 
   // Congela os pontos no resultado: mudar a regra depois nao corrompe o historico.
   const lancarResultado = (prova, lancamentos) => {
@@ -328,10 +368,10 @@ export default function Gincana() {
           <h1 className="placar text-3xl leading-none mt-1" style={{ color: C.papel }}>GINCANA DO SAGRADO</h1>
         </div>
         <nav className="max-w-3xl mx-auto px-5 flex gap-1">
-          {[["ranking", "Placar", Trophy], ["provas", "Provas", ClipboardList], ["equipes", "Equipes", Users]].map(([k, t, Ico]) => (
+          {[["ranking", "Placar", Trophy], ["provas", "Provas", ClipboardList], ["anexos", "Anexos", ImageIcon], ["equipes", "Equipes", Users]].map(([k, t, Ico]) => (
             <button
               key={k}
-              onClick={() => setAba(k)}
+              onClick={() => { setAba(k); setFiltroAnexoProva(null); setAnexoAberto(null); }}
               className="flex items-center gap-1.5 px-3 py-2.5 rounded-t-md text-sm font-semibold"
               style={{ background: aba === k ? C.quadra : "transparent", color: aba === k ? C.tinta : C.menta }}
             >
@@ -400,6 +440,8 @@ export default function Gincana() {
                           equipes={equipes}
                           professor={professor}
                           publico={publico}
+                          qtdAnexos={anexos.filter((a) => a.provaId === p.id).length}
+                          onVerAnexos={() => { setAba("anexos"); setFiltroAnexoProva(p.id); setAnexoAberto(null); }}
                           onLancar={() => setModal({ t: "lancar", d: p })}
                           onEditar={() => setModal({ t: "prova", d: p })}
                           onExcluir={() => excluirProva(p.id)}
@@ -411,6 +453,23 @@ export default function Gincana() {
               </div>
             )}
           </>
+        )}
+
+        {aba === "anexos" && (
+          <PainelAnexos
+            anexos={anexos}
+            provas={provas}
+            professor={professor}
+            filtroProva={filtroAnexoProva}
+            anexoAberto={anexoAberto}
+            onLimparFiltro={() => setFiltroAnexoProva(null)}
+            onAbrir={(id) => setAnexoAberto(id)}
+            onVoltar={() => setAnexoAberto(null)}
+            onNovo={() => setModal({ t: "anexo", d: null })}
+            onEditar={(a) => setModal({ t: "anexo", d: a })}
+            onExcluir={(id) => { excluirAnexo(id); setAnexoAberto(null); }}
+            onFixar={(id) => alternarFixado(id)}
+          />
         )}
 
         {aba === "equipes" && (
@@ -445,6 +504,9 @@ export default function Gincana() {
       )}
       {modal?.t === "prova" && (
         <FormProva prova={modal.d} provas={provas} onSalvar={(p) => { salvarProva(p); setModal(null); }} onFechar={() => setModal(null)} />
+      )}
+      {modal?.t === "anexo" && (
+        <FormAnexo anexo={modal.d} provas={provas} token={token} onSalvar={(a) => { salvarAnexo(a); setModal(null); }} onFechar={() => setModal(null)} />
       )}
       {modal?.t === "lancar" && (
         <FormLancamento
@@ -524,7 +586,7 @@ function Posicao({ n }) {
 // Card da aba Equipes: mostra so os lideres; a seta expande o resto.
 function CardEquipe({ equipe, professor, onEditar, onExcluir }) {
   const [aberto, setAberto] = useState(false);
-  const ordenados = [...equipe.integrantes].sort((a, b) => (b.lider ? 1 : 0) - (a.lider ? 1 : 0));
+  const ordenados = ordenarIntegrantes(equipe.integrantes);
   const lideres = ordenados.filter((i) => i.lider);
   const visiveis = aberto ? ordenados : lideres;
   const escondidos = equipe.integrantes.length - lideres.length;
@@ -731,7 +793,7 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
         </button>
       </div>
       <div className="space-y-1 mb-2">
-        {integrantes.map((i) => (
+        {ordenarIntegrantes(integrantes).map((i) => (
           <div key={i.id} className="flex items-center gap-2 px-3 py-2 rounded-md text-sm" style={{ background: C.quadra }}>
             <span className="flex-1 truncate">{i.nome}</span>
             <select
@@ -773,7 +835,7 @@ function FormEquipe({ equipe, usadas, onSalvar, onFechar }) {
   );
 }
 
-function CardProva({ prova, resultados, equipes, professor, publico, onLancar, onEditar, onExcluir }) {
+function CardProva({ prova, resultados, equipes, professor, publico, qtdAnexos = 0, onVerAnexos, onLancar, onEditar, onExcluir }) {
   const lancados = resultados.filter((r) => r.provaId === prova.id);
   return (
     <div className="rounded-lg p-4" style={{ background: C.papel, border: `1px solid ${C.linha}` }}>
@@ -828,6 +890,16 @@ function CardProva({ prova, resultados, equipes, professor, publico, onLancar, o
           <IconBtn onClick={onEditar}><Pencil size={15} /></IconBtn>
           <IconBtn onClick={onExcluir} perigo><Trash2 size={15} /></IconBtn>
         </div>
+      )}
+
+      {qtdAnexos > 0 && (
+        <button
+          onClick={onVerAnexos}
+          className="w-full mt-2 py-2 rounded-md text-sm font-semibold flex items-center justify-center gap-1.5"
+          style={{ border: `1px solid ${C.pinho}`, color: C.pinho, background: "transparent" }}
+        >
+          <ImageIcon size={14} /> Ver anexos ({qtdAnexos})
+        </button>
       )}
     </div>
   );
@@ -1129,8 +1201,7 @@ function DetalheEquipe({ equipe, provas, resultados, publico, onFechar }) {
       {verIntegrantes && (
         <div className="flex flex-wrap gap-1.5 mb-5">
           {equipe.integrantes.length ? (
-            [...equipe.integrantes]
-              .sort((a, b) => (b.lider ? 1 : 0) - (a.lider ? 1 : 0))
+            ordenarIntegrantes(equipe.integrantes)
               .map((i) => (
                 <span key={i.id} className="px-2.5 py-1 rounded-full text-sm flex items-center gap-1" style={{ background: C.quadra }}>
                   {i.lider && <Crown size={12} fill={C.apito} style={{ color: C.apito }} />}
@@ -1203,5 +1274,218 @@ function FormLogin({ onEntrar, onFechar }) {
       )}
       <Confirmar onClick={tentar} texto={carregando ? "Entrando..." : "Entrar"} desabilitado={!senha || carregando} />
     </Modal>
+  );
+}
+
+function FormAnexo({ anexo, provas = [], token, onSalvar, onFechar }) {
+  const [titulo, setTitulo] = useState(anexo?.titulo ?? "");
+  const [descricao, setDescricao] = useState(anexo?.descricao ?? "");
+  const [provaId, setProvaId] = useState(anexo?.provaId ?? "");
+  const [imagens, setImagens] = useState(anexo?.imagens ?? []);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  // Sobe cada arquivo escolhido para /api/upload e guarda a URL retornada.
+  const aoEscolher = async (ev) => {
+    const arquivos = [...(ev.target.files || [])];
+    if (!arquivos.length) return;
+    setErro("");
+    setEnviando(true);
+    for (const arquivo of arquivos) {
+      try {
+        const fd = new FormData();
+        fd.append("arquivo", arquivo);
+        const r = await fetch("/api/upload", {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: fd,
+        });
+        const dados = await r.json();
+        if (!r.ok) throw new Error(dados.erro || "Falha no upload.");
+        setImagens((atual) => [...atual, { url: dados.url, nome: dados.nome }]);
+      } catch (e) {
+        setErro(e.message || "Falha ao enviar imagem.");
+      }
+    }
+    setEnviando(false);
+    ev.target.value = ""; // permite reescolher o mesmo arquivo
+  };
+
+  const removerImagem = (url) => setImagens(imagens.filter((im) => im.url !== url));
+
+  const podeSalvar = titulo.trim() && imagens.length > 0 && !enviando;
+
+  return (
+    <Modal titulo={anexo ? "Editar anexo" : "Novo anexo"} onFechar={onFechar}>
+      <Campo rotulo="Titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Cabo de guerra, Cronograma..." />
+      <Campo rotulo="Descricao (opcional)" value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Fotos da prova" />
+
+      <label className="block mb-3">
+        <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Prova vinculada (opcional)</span>
+        <select
+          value={provaId}
+          onChange={(e) => setProvaId(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-md text-sm"
+          style={{ background: C.quadra, border: `1px solid ${C.linha}` }}
+        >
+          <option value="">Nenhuma (anexo geral)</option>
+          {provas.map((p) => (
+            <option key={p.id} value={p.id}>{p.nome}</option>
+          ))}
+        </select>
+      </label>
+
+      <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Imagens</span>
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        {imagens.map((im) => (
+          <div key={im.url} className="relative rounded-md overflow-hidden" style={{ aspectRatio: "1", background: C.quadra }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={im.url} alt={im.nome} className="w-full h-full object-cover" />
+            <button
+              onClick={() => removerImagem(im.url)}
+              className="absolute top-1 right-1 rounded-full p-0.5"
+              style={{ background: "rgba(0,0,0,.6)", color: "#fff" }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ))}
+        <label
+          className="flex flex-col items-center justify-center rounded-md cursor-pointer text-xs"
+          style={{ aspectRatio: "1", border: `1px dashed ${C.linha}`, color: C.fraco }}
+        >
+          {enviando ? <Loader2 size={20} className="animate-spin" /> : <Plus size={20} />}
+          <span className="mt-1">{enviando ? "Enviando" : "Adicionar"}</span>
+          <input type="file" accept="image/*" multiple onChange={aoEscolher} className="hidden" disabled={enviando} />
+        </label>
+      </div>
+      {erro && <p className="text-xs mb-2" style={{ color: C.apito }}>{erro}</p>}
+
+      <Confirmar
+        onClick={() => podeSalvar && onSalvar({ ...anexo, titulo: titulo.trim(), descricao: descricao.trim(), provaId: provaId || null, imagens })}
+        desabilitado={!podeSalvar}
+        texto={enviando ? "Enviando imagens..." : "Salvar"}
+      />
+    </Modal>
+  );
+}
+
+// Painel da aba Anexos: mostra a lista de posts empilhados, ou o post aberto
+// em tela cheia. Respeita o filtro por prova (vindo do botao "Ver anexos").
+function PainelAnexos({ anexos, provas, professor, filtroProva, anexoAberto, onLimparFiltro, onAbrir, onVoltar, onNovo, onEditar, onExcluir, onFixar }) {
+  const nomeProva = (id) => provas.find((p) => p.id === id)?.nome;
+
+  // Lista visivel: se ha filtro, SO os daquela prova. Fixados sempre no topo.
+  const base = filtroProva ? anexos.filter((a) => a.provaId === filtroProva) : anexos;
+  const lista = [...base].sort((a, b) => (b.fixado ? 1 : 0) - (a.fixado ? 1 : 0));
+
+  // ── Post aberto em tela cheia ──
+  const aberto = anexoAberto ? anexos.find((a) => a.id === anexoAberto) : null;
+  if (aberto) {
+    const prova = nomeProva(aberto.provaId);
+    return (
+      <div>
+        <button onClick={onVoltar} className="flex items-center gap-2 text-sm mb-4" style={{ color: C.medio }}>
+          <ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /> Voltar aos anexos
+        </button>
+        <div className="rounded-2xl p-5" style={{ background: C.papel, border: `1px solid ${C.linha}`, boxShadow: "0 1px 3px rgba(0,0,0,.06)" }}>
+          <h2 className="placar text-2xl">{aberto.titulo}</h2>
+          <div className="text-xs mt-1" style={{ color: C.fraco }}>
+            {prova ? `Prova: ${prova}` : "Sem prova vinculada"}
+          </div>
+          {aberto.descricao && <p className="text-sm mt-3" style={{ color: C.medio }}>{aberto.descricao}</p>}
+          {professor && (
+            <div className="flex gap-2 mt-3">
+              <IconBtn onClick={() => onEditar(aberto)}><Pencil size={15} /></IconBtn>
+              <IconBtn onClick={() => onExcluir(aberto.id)} perigo><Trash2 size={15} /></IconBtn>
+            </div>
+          )}
+          <div className="flex flex-col gap-3 mt-4">
+            {(aberto.imagens || []).map((im) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <a key={im.url} href={im.url} target="_blank" rel="noopener noreferrer" className="rounded-xl overflow-hidden block" style={{ background: C.quadra }}>
+                <img src={im.url} alt={im.nome} className="w-full object-cover" />
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Lista de posts ──
+  return (
+    <>
+      {professor && <BotaoNovo onClick={onNovo} texto="Novo anexo" />}
+      {filtroProva && (
+        <div className="flex items-center justify-between gap-2 mt-3 mb-1 px-3 py-2 rounded-md text-sm" style={{ background: C.quadra }}>
+          <span className="truncate" style={{ color: C.medio }}>
+            Anexos de: <b>{nomeProva(filtroProva) ?? "prova"}</b>
+          </span>
+          <button onClick={onLimparFiltro} className="shrink-0 text-xs font-semibold" style={{ color: C.pinho }}>
+            Ver todos
+          </button>
+        </div>
+      )}
+      {lista.length === 0 ? (
+        <Vazio texto={filtroProva ? "Esta prova ainda nao tem anexos." : "Nenhum anexo ainda. Adicione fotos das provas ou um cronograma."} />
+      ) : (
+        <div className="flex flex-col gap-2 mt-3">
+          {lista.map((a) => {
+            const prova = nomeProva(a.provaId);
+            const capa = (a.imagens || [])[0];
+            const qtd = (a.imagens || []).length;
+            return (
+              <div
+                key={a.id}
+                className="rounded-xl cursor-pointer flex items-center gap-3 p-2.5"
+                style={{ background: C.papel, border: `1px solid ${C.linha}` }}
+                onClick={() => onAbrir(a.id)}
+              >
+                {/* miniatura pequena */}
+                <div className="rounded-lg overflow-hidden shrink-0" style={{ width: 52, height: 52, background: C.quadra }}>
+                  {capa ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={capa.url} alt={a.titulo} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center" style={{ color: C.linha }}>
+                      <ImageIcon size={22} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate flex items-center gap-1.5">
+                    {a.fixado && <Star size={14} fill={C.pinho} style={{ color: C.pinho }} className="shrink-0" />}
+                    <span className="truncate">{a.titulo}</span>
+                  </div>
+                  <div className="text-xs truncate" style={{ color: C.fraco }}>
+                    {prova ? `Prova: ${prova}` : "Sem prova vinculada"}
+                    {qtd > 0 ? ` · ${qtd} foto${qtd === 1 ? "" : "s"}` : ""}
+                  </div>
+                </div>
+
+                {professor ? (
+                  <div className="flex gap-2 shrink-0" onClick={(ev) => ev.stopPropagation()}>
+                    <button
+                      onClick={() => onFixar(a.id)}
+                      title={a.fixado ? "Desafixar" : "Fixar no topo"}
+                      className="p-2 rounded-md"
+                      style={{ background: C.quadra, color: a.fixado ? C.pinho : C.fraco }}
+                    >
+                      <Star size={15} fill={a.fixado ? C.pinho : "none"} />
+                    </button>
+                    <IconBtn onClick={() => onEditar(a)}><Pencil size={15} /></IconBtn>
+                    <IconBtn onClick={() => onExcluir(a.id)} perigo><Trash2 size={15} /></IconBtn>
+                  </div>
+                ) : (
+                  <ChevronRight size={18} className="shrink-0" style={{ color: C.linha }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }

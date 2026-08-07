@@ -28,11 +28,22 @@ function posicoesPorPontos(itens) {
 export async function GET(request) {
   const logado = tokenValido(request);
 
-  const [equipesDb, provasDb, resultadosDb] = await Promise.all([
+  const [equipesDb, provasDb, resultadosDb, anexosDb] = await Promise.all([
     prisma.equipe.findMany({ include: { integrantes: true }, orderBy: { criadoEm: "asc" } }),
     prisma.prova.findMany({ include: { regras: { orderBy: { posicao: "asc" } } }, orderBy: { criadoEm: "asc" } }),
     prisma.resultado.findMany(),
+    prisma.anexo.findMany({ orderBy: { criadoEm: "asc" } }),
   ]);
+
+  // Anexos sao publicos: aparecem logado ou nao.
+  const anexos = anexosDb.map((a) => ({
+    id: a.id,
+    titulo: a.titulo,
+    descricao: a.descricao ?? "",
+    fixado: a.fixado ?? false,
+    provaId: a.provaId ?? null,
+    imagens: (() => { try { return JSON.parse(a.imagens); } catch { return []; } })(),
+  }));
 
   const equipes = equipesDb.map((e) => ({
     id: e.id,
@@ -67,7 +78,7 @@ export async function GET(request) {
       pontos: r.pontos,
       criadoEm: r.criadoEm,
     }));
-    return NextResponse.json({ equipes, provas, resultados, publico: false });
+    return NextResponse.json({ equipes, provas, resultados, anexos, publico: false });
   }
 
   // ── Publico: calcula colocacoes, remove os pontos ──
@@ -97,7 +108,7 @@ export async function GET(request) {
     }
   }
 
-  return NextResponse.json({ equipes: equipesPublic, provas, resultados, publico: true });
+  return NextResponse.json({ equipes: equipesPublic, provas, resultados, anexos, publico: true });
 }
 
 // PUT /api/estado  — so admin. Recebe o estado inteiro e regrava.
@@ -108,7 +119,7 @@ export async function PUT(request) {
     return NextResponse.json({ erro: "Nao autorizado." }, { status: 401 });
   }
 
-  const { equipes = [], provas = [], resultados = [] } = await request.json().catch(() => ({}));
+  const { equipes = [], provas = [], resultados = [], anexos = [] } = await request.json().catch(() => ({}));
 
   try {
     // Monta as listas "achatadas" (com as chaves estrangeiras) de uma vez.
@@ -139,10 +150,19 @@ export async function PUT(request) {
       valor: r.valor == null ? null : JSON.stringify(r.valor),
       pontos: Number(r.pontos) || 0,
     }));
+    const dadosAnexos = anexos.map((a) => ({
+      id: a.id,
+      titulo: a.titulo,
+      descricao: a.descricao || null,
+      fixado: !!a.fixado,
+      imagens: JSON.stringify(a.imagens || []),
+      provaId: a.provaId || null,
+    }));
 
     // Transacao em LOTE (nao interativa): mais rapida e estavel em serverless.
     // Apaga tudo e recria; a ordem respeita as chaves estrangeiras.
     await prisma.$transaction([
+      prisma.anexo.deleteMany(),
       prisma.resultado.deleteMany(),
       prisma.integrante.deleteMany(),
       prisma.regraColocacao.deleteMany(),
@@ -153,6 +173,7 @@ export async function PUT(request) {
       prisma.prova.createMany({ data: dadosProvas }),
       prisma.regraColocacao.createMany({ data: dadosRegras }),
       prisma.resultado.createMany({ data: dadosResultados }),
+      prisma.anexo.createMany({ data: dadosAnexos }),
     ]);
 
     return NextResponse.json({ ok: true });
