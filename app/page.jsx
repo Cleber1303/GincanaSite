@@ -334,14 +334,7 @@ export default function Gincana() {
       `}</style>
 
       <header style={{ background: C.pinho, borderBottom: `4px solid ${C.papel}` }}>
-        <div className="max-w-3xl mx-auto px-5 pt-5 flex items-start justify-between gap-4">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo-gincana.png"
-            alt="Gincana do Sagrado"
-            className="h-12 sm:h-14 w-auto"
-            style={{ maxWidth: "70%" }}
-          />
+        <div className="max-w-3xl mx-auto px-5 pt-4 flex justify-end">
           {professor ? (
             <div className="flex items-center gap-2 shrink-0">
               <IndicadorSalvamento status={salvamento} />
@@ -363,6 +356,16 @@ export default function Gincana() {
             </button>
           )}
         </div>
+
+        {/* Duas logos: lado a lado no desktop, empilhadas no celular */}
+        <div className="max-w-3xl mx-auto px-5 pt-3 flex flex-col sm:flex-row sm:items-center sm:justify-center gap-4 sm:gap-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-gincana.png" alt="Gincana do Sagrado" className="h-14 w-auto self-center" />
+          <div className="hidden sm:block" style={{ width: 1, height: 48, background: "rgba(255,255,255,.25)" }} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-colegio.png" alt="Colegio Sagrado Coracao de Maria" className="h-14 w-auto self-center" />
+        </div>
+
         <div className="max-w-3xl mx-auto px-5 pt-4 pb-5">
           <div className="rotulo" style={{ color: C.menta }}>Placar ao vivo</div>
           <h1 className="placar text-3xl leading-none mt-1" style={{ color: C.papel }}>GINCANA DO SAGRADO</h1>
