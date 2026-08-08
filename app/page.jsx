@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Crown, LogIn, LogOut, Loader2, Check, AlertCircle, Image as ImageIcon, Star } from "lucide-react";
+import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Crown, LogIn, LogOut, Loader2, Check, AlertCircle, Image as ImageIcon, Star, Info } from "lucide-react";
 import { TIPOS, calcularPontos, calcularRanking } from "@/lib/pontuacao";
 
 /* ══════════════════════════════════════════════════════════════
@@ -360,10 +360,10 @@ export default function Gincana() {
         {/* Duas logos: lado a lado no desktop, empilhadas no celular */}
         <div className="max-w-3xl mx-auto px-5 pt-3 flex flex-col sm:flex-row sm:items-center sm:justify-center gap-4 sm:gap-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-gincana.png" alt="Gincana do Sagrado" className="h-14 w-auto self-center" />
-          <div className="hidden sm:block" style={{ width: 1, height: 48, background: "rgba(255,255,255,.25)" }} />
+          <img src="/logo-gincana.png" alt="Gincana do Sagrado" className="h-20 w-auto self-center" />
+          <div className="hidden sm:block" style={{ width: 1, height: 60, background: "rgba(255,255,255,.25)" }} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-colegio.png" alt="Colegio Sagrado Coracao de Maria" className="h-14 w-auto self-center" />
+          <img src="/logo-colegio.png" alt="Colegio Sagrado Coracao de Maria" className="h-20 w-auto self-center" />
         </div>
 
         <div className="max-w-3xl mx-auto px-5 pt-4 pb-5">
@@ -371,7 +371,7 @@ export default function Gincana() {
           <h1 className="placar text-3xl leading-none mt-1" style={{ color: C.papel }}>GINCANA DO SAGRADO</h1>
         </div>
         <nav className="max-w-3xl mx-auto px-5 flex gap-1">
-          {[["ranking", "Placar", Trophy], ["provas", "Provas", ClipboardList], ["anexos", "Anexos", ImageIcon], ["equipes", "Equipes", Users]].map(([k, t, Ico]) => (
+          {[["ranking", "Placar", Trophy], ["provas", "Provas", ClipboardList], ["anexos", "Info", Info], ["equipes", "Equipes", Users]].map(([k, t, Ico]) => (
             <button
               key={k}
               onClick={() => { setAba(k); setFiltroAnexoProva(null); setAnexoAberto(null); }}
