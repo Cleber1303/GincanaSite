@@ -560,6 +560,14 @@ function IndicadorSalvamento({ status }) {
   );
 }
 
+// Mostra "1o", "2o"... com o "o" pequeno e subido, para nao confundir com "10", "20".
+const Ordinal = ({ n }) => (
+  <>
+    {n}
+    <sup style={{ fontSize: "0.6em", marginLeft: 1, fontWeight: 600 }}>o</sup>
+  </>
+);
+
 const IconBtn = ({ children, onClick, perigo }) => (
   <button onClick={onClick} className="p-2 rounded-md" style={{ background: C.quadra, color: perigo ? C.apito : C.fraco }}>
     {children}
@@ -873,7 +881,7 @@ function CardProva({ prova, resultados, equipes, professor, publico, qtdAnexos =
                 <div key={r.id} className="flex items-center gap-2 text-sm">
                   <span style={{ width: 8, height: 8, borderRadius: 2, background: eq.cor }} />
                   <span className="flex-1 truncate">{eq.nome}</span>
-                  {r.posicao && <span className="rotulo" style={{ color: C.fraco }}>{r.posicao}o</span>}
+                  {r.posicao && <span className="rotulo" style={{ color: C.fraco }}><Ordinal n={r.posicao} /></span>}
                   {!publico && <span className="placar text-sm">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>}
                 </div>
               );
@@ -1025,7 +1033,7 @@ function FormProva({ prova, provas = [], onSalvar, onFechar }) {
           <span className="rotulo block mb-1.5" style={{ color: C.fraco }}>Pontos por posicao</span>
           {f.regras.map((r, i) => (
             <div key={i} className="flex items-center gap-2 mb-1.5">
-              <span className="placar w-8 text-sm">{r.posicao}o</span>
+              <span className="placar w-8 text-sm"><Ordinal n={r.posicao} /></span>
               <input
                 type="number"
                 value={r.pontos}
@@ -1137,7 +1145,7 @@ function FormLancamento({ prova, equipes, anteriores, onSalvar, onFechar }) {
                     >
                       <option value="">Selecione a colocacao</option>
                       {prova.regras.map((r) => (
-                        <option key={r.posicao} value={r.posicao}>{r.posicao}o lugar — {r.pontos} pts</option>
+                        <option key={r.posicao} value={r.posicao}>{r.posicao}º lugar — {r.pontos} pts</option>
                       ))}
                     </select>
                   )}
@@ -1182,7 +1190,7 @@ function DetalheEquipe({ equipe, provas, resultados, publico, onFechar }) {
         equipe.posicaoGeral && (
           <div className="rounded-lg p-4 mb-4 flex items-baseline justify-between" style={{ background: equipe.cor, color: C.papel }}>
             <span className="rotulo">Colocacao geral</span>
-            <span className="placar text-3xl">{equipe.posicaoGeral}o</span>
+            <span className="placar text-3xl"><Ordinal n={equipe.posicaoGeral} /></span>
           </div>
         )
       ) : (
@@ -1228,7 +1236,7 @@ function DetalheEquipe({ equipe, provas, resultados, publico, onFechar }) {
             return (
               <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-md text-sm" style={{ background: C.quadra }}>
                 <span className="truncate">
-                  {p?.nome ?? "Prova removida"}{r.posicao ? ` · ${r.posicao}o` : ""}
+                  {p?.nome ?? "Prova removida"}{r.posicao ? (<> · <Ordinal n={r.posicao} /></>) : ""}
                 </span>
                 {!publico && <span className="placar">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>}
               </div>
