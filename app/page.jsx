@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Crown, LogIn, LogOut, Loader2, Check, AlertCircle, Image as ImageIcon, Star, Info } from "lucide-react";
+import { Trophy, Plus, Trash2, Users, ClipboardList, Medal, X, Pencil, ChevronRight, ChevronDown, ChevronUp, Crown, LogIn, LogOut, Loader2, Check, AlertCircle, Image as ImageIcon, Star, Info, History, Archive } from "lucide-react";
 import { TIPOS, calcularPontos, calcularRanking } from "@/lib/pontuacao";
 
 /* ══════════════════════════════════════════════════════════════
@@ -56,7 +56,7 @@ function agruparPorDia(provas) {
    ══════════════════════════════════════════════════════════════ */
 
 const CHAVE_TOKEN = "gincana:token";
-const VAZIO = { equipes: [], provas: [], resultados: [], anexos: [], publico: true };
+const VAZIO = { equipes: [], provas: [], resultados: [], anexos: [], edicoes: [], publico: true };
 
 const repo = {
   async carregar(token) {
@@ -87,6 +87,25 @@ const repo = {
     if (!r.ok) return null;
     const { token } = await r.json();
     return token;
+  },
+  // Arquiva a gincana atual como uma edicao do historico.
+  async arquivar(nome, token) {
+    const r = await fetch("/api/edicoes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ nome }),
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(dados.erro || "Falha ao arquivar.");
+    return dados;
+  },
+  async excluirEdicao(id, token) {
+    const r = await fetch(`/api/edicoes?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error("Falha ao excluir a edicao.");
+    return r.json();
   },
 };
 
@@ -159,6 +178,7 @@ export default function Gincana() {
   const [aba, setAba] = useState("ranking");
   const [filtroAnexoProva, setFiltroAnexoProva] = useState(null);
   const [anexoAberto, setAnexoAberto] = useState(null); // id do anexo em tela cheia
+  const [edicaoAberta, setEdicaoAberta] = useState(null); // id da edicao do historico aberta
   const [token, setToken] = useState(null);
   const [modal, setModal] = useState(null);
   const [salvamento, setSalvamento] = useState("ocioso"); // ocioso | salvando | salvo | erro
@@ -238,7 +258,7 @@ export default function Gincana() {
     }
   };
 
-  const { equipes, provas, resultados, anexos = [] } = estado;
+  const { equipes, provas, resultados, anexos = [], edicoes = [] } = estado;
   const publico = estado.publico === true;
 
   // No modo publico o servidor manda so as colocacoes (posicaoGeral por equipe),
@@ -291,6 +311,43 @@ export default function Gincana() {
 
   const alternarFixado = (aid) =>
     atualizar({ ...estado, anexos: anexos.map((a) => (a.id === aid ? { ...a, fixado: !a.fixado } : a)) });
+
+  // Arquiva a gincana atual no historico. O servidor le direto do banco.
+  const arquivarEdicao = async (nome) => {
+    setSalvamento("salvando");
+    try {
+      await repo.arquivar(nome, token);
+      const novo = await repo.carregar(token);
+      setEstado(novo);
+      setSalvamento("salvo");
+      setTimeout(() => setSalvamento((s) => (s === "salvo" ? "ocioso" : s)), 2500);
+      return true;
+    } catch (e) {
+      setSalvamento("erro");
+      alert(e.message || "Nao foi possivel arquivar.");
+      return false;
+    }
+  };
+
+  const excluirEdicao = async (id) => {
+    setSalvamento("salvando");
+    try {
+      await repo.excluirEdicao(id, token);
+      const novo = await repo.carregar(token);
+      setEstado(novo);
+      setEdicaoAberta(null);
+      setSalvamento("salvo");
+      setTimeout(() => setSalvamento((s) => (s === "salvo" ? "ocioso" : s)), 2500);
+    } catch (e) {
+      setSalvamento("erro");
+      alert(e.message || "Nao foi possivel excluir.");
+    }
+  };
+
+  // Limpa a gincana atual (equipes, provas, resultados) para comecar do zero.
+  // O historico ja arquivado NAO e afetado.
+  const limparGincana = () =>
+    atualizar({ ...estado, equipes: [], provas: [], resultados: [], anexos: [] });
 
   // Congela os pontos no resultado: mudar a regra depois nao corrompe o historico.
   const lancarResultado = (prova, lancamentos) => {
@@ -370,17 +427,25 @@ export default function Gincana() {
           <div className="rotulo" style={{ color: C.menta }}>Placar ao vivo</div>
           <h1 className="placar text-3xl leading-none mt-1" style={{ color: C.papel }}>GINCANA DO SAGRADO</h1>
         </div>
-        <nav className="max-w-3xl mx-auto px-5 flex gap-1">
+        <nav className="max-w-3xl mx-auto px-5 flex gap-1 items-end">
           {[["ranking", "Placar", Trophy], ["provas", "Provas", ClipboardList], ["anexos", "Info", Info], ["equipes", "Equipes", Users]].map(([k, t, Ico]) => (
             <button
               key={k}
-              onClick={() => { setAba(k); setFiltroAnexoProva(null); setAnexoAberto(null); }}
+              onClick={() => { setAba(k); setFiltroAnexoProva(null); setAnexoAberto(null); setEdicaoAberta(null); }}
               className="flex items-center gap-1.5 px-3 py-2.5 rounded-t-md text-sm font-semibold"
               style={{ background: aba === k ? C.quadra : "transparent", color: aba === k ? C.tinta : C.menta }}
             >
               <Ico size={15} /> {t}
             </button>
           ))}
+          {/* Historico fica separado, no canto direito */}
+          <button
+            onClick={() => { setAba("historico"); setFiltroAnexoProva(null); setAnexoAberto(null); setEdicaoAberta(null); }}
+            className="flex items-center gap-1.5 px-3 py-2.5 rounded-t-md text-sm font-semibold ml-auto"
+            style={{ background: aba === "historico" ? C.quadra : "transparent", color: aba === "historico" ? C.tinta : C.menta }}
+          >
+            <History size={15} /> Historico
+          </button>
         </nav>
       </header>
 
@@ -495,6 +560,19 @@ export default function Gincana() {
             )}
           </>
         )}
+
+        {aba === "historico" && (
+          <PainelHistorico
+            edicoes={edicoes}
+            professor={professor}
+            edicaoAberta={edicaoAberta}
+            temGincanaAtual={equipes.length > 0 || provas.length > 0}
+            onAbrir={(id) => setEdicaoAberta(id)}
+            onVoltar={() => setEdicaoAberta(null)}
+            onArquivar={() => setModal({ t: "arquivar" })}
+            onExcluir={excluirEdicao}
+          />
+        )}
       </main>
 
       {modal?.t === "equipe" && (
@@ -510,6 +588,13 @@ export default function Gincana() {
       )}
       {modal?.t === "anexo" && (
         <FormAnexo anexo={modal.d} provas={provas} token={token} onSalvar={(a) => { salvarAnexo(a); setModal(null); }} onFechar={() => setModal(null)} />
+      )}
+      {modal?.t === "arquivar" && (
+        <FormArquivar
+          onArquivar={arquivarEdicao}
+          onLimpar={limparGincana}
+          onFechar={() => setModal(null)}
+        />
       )}
       {modal?.t === "lancar" && (
         <FormLancamento
@@ -1498,5 +1583,190 @@ function PainelAnexos({ anexos, provas, professor, filtroProva, anexoAberto, onL
         </div>
       )}
     </>
+  );
+}
+
+// Painel da aba Historico: lista as edicoes arquivadas ou mostra uma delas.
+function PainelHistorico({ edicoes, professor, edicaoAberta, temGincanaAtual, onAbrir, onVoltar, onArquivar, onExcluir }) {
+  const aberta = edicaoAberta ? edicoes.find((e) => e.id === edicaoAberta) : null;
+
+  // ── Uma edicao aberta: placar final + provas por dia ──
+  if (aberta) {
+    const { equipes = [], provas = [], resultados = [] } = aberta.dados || {};
+    const placar = calcularRanking(equipes, resultados);
+    const grupos = agruparPorDia(provas);
+
+    return (
+      <div>
+        <button onClick={onVoltar} className="flex items-center gap-2 text-sm mb-4" style={{ color: C.medio }}>
+          <ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /> Voltar ao historico
+        </button>
+
+        <h2 className="placar text-2xl mb-1">{aberta.nome}</h2>
+        <div className="rotulo mb-5" style={{ color: C.fraco }}>
+          Arquivada em {formatarData(String(aberta.criadoEm).slice(0, 10))}
+        </div>
+
+        <div className="rotulo mb-2" style={{ color: C.fraco }}>Placar final</div>
+        {placar.length === 0 ? (
+          <p className="text-sm mb-5" style={{ color: C.fraco }}>Sem equipes nesta edicao.</p>
+        ) : (
+          <div className="space-y-2 mb-6">
+            {placar.map((e) => (
+              <div key={e.id} className="rounded-lg p-3 flex items-center gap-3" style={{ background: C.papel, border: `1px solid ${C.linha}`, borderLeft: `5px solid ${e.cor}` }}>
+                <Posicao n={e.posicao} />
+                <span className="flex-1 font-semibold truncate">{e.nome}</span>
+                <span className="placar text-lg">{e.pontos}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="rotulo mb-2" style={{ color: C.fraco }}>Provas</div>
+        {provas.length === 0 ? (
+          <p className="text-sm" style={{ color: C.fraco }}>Sem provas nesta edicao.</p>
+        ) : (
+          <div className="space-y-5">
+            {grupos.map((g) => (
+              <div key={g.chave}>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <h3 className="placar">{g.rotulo}</h3>
+                  {g.data && <span className="rotulo" style={{ color: C.fraco }}>{formatarData(g.data)}</span>}
+                </div>
+                <div className="space-y-2">
+                  {g.provas.map((p) => {
+                    const doProva = resultados
+                      .filter((r) => r.provaId === p.id)
+                      .sort((a, b) => b.pontos - a.pontos);
+                    return (
+                      <div key={p.id} className="rounded-lg p-3" style={{ background: C.papel, border: `1px solid ${C.linha}` }}>
+                        <div className="rotulo" style={{ color: C.fraco }}>
+                          {p.horario ? `${p.horario} · ` : ""}{TIPOS[p.tipo]?.label ?? p.tipo}
+                        </div>
+                        <div className="font-semibold mt-0.5">{p.nome}</div>
+                        {doProva.length > 0 && (
+                          <div className="mt-2 pt-2 space-y-1" style={{ borderTop: `1px solid ${C.linha}` }}>
+                            {doProva.map((r) => {
+                              const eq = equipes.find((x) => x.id === r.equipeId);
+                              if (!eq) return null;
+                              return (
+                                <div key={r.id} className="flex items-center gap-2 text-sm">
+                                  <span style={{ width: 8, height: 8, borderRadius: 2, background: eq.cor }} />
+                                  <span className="flex-1 truncate">{eq.nome}</span>
+                                  {r.posicao && <span className="rotulo" style={{ color: C.fraco }}><Ordinal n={r.posicao} /></span>}
+                                  <span className="placar text-sm">{r.pontos > 0 ? "+" : ""}{r.pontos}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Lista de edicoes ──
+  return (
+    <>
+      {professor && temGincanaAtual && (
+        <button
+          onClick={onArquivar}
+          className="w-full py-3 rounded-lg font-semibold flex items-center justify-center gap-2 text-sm"
+          style={{ background: C.pinho, color: C.papel }}
+        >
+          <Archive size={16} /> Arquivar gincana
+        </button>
+      )}
+
+      {edicoes.length === 0 ? (
+        <Vazio texto="Nenhuma gincana arquivada ainda. Ao terminar uma gincana, arquive para guardar o resultado aqui." />
+      ) : (
+        <div className="flex flex-col gap-2 mt-3">
+          {edicoes.map((ed) => {
+            const { equipes = [], provas = [], resultados = [] } = ed.dados || {};
+            const campea = calcularRanking(equipes, resultados)[0];
+            return (
+              <div
+                key={ed.id}
+                className="rounded-xl cursor-pointer flex items-center gap-3 p-3"
+                style={{ background: C.papel, border: `1px solid ${C.linha}` }}
+                onClick={() => onAbrir(ed.id)}
+              >
+                <div className="rounded-lg flex items-center justify-center shrink-0" style={{ width: 44, height: 44, background: "#F2B01E", color: "#5A3F04" }}>
+                  <Trophy size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{ed.nome}</div>
+                  <div className="text-xs truncate" style={{ color: C.fraco }}>
+                    {campea ? `Campea: ${campea.nome}` : "Sem campea"} · {provas.length} prova{provas.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                {professor ? (
+                  <div className="shrink-0" onClick={(ev) => ev.stopPropagation()}>
+                    <IconBtn
+                      onClick={() => {
+                        if (confirm(`Excluir "${ed.nome}" do historico? Isso nao pode ser desfeito.`)) onExcluir(ed.id);
+                      }}
+                      perigo
+                    >
+                      <Trash2 size={15} />
+                    </IconBtn>
+                  </div>
+                ) : (
+                  <ChevronRight size={18} className="shrink-0" style={{ color: C.linha }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// Modal de arquivar: define o nome e, opcionalmente, limpa a gincana atual.
+function FormArquivar({ onArquivar, onLimpar, onFechar }) {
+  const anoAtual = new Date().getFullYear();
+  const [nome, setNome] = useState(`Gincana ${anoAtual}`);
+  const [limpar, setLimpar] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+
+  const confirmar = async () => {
+    if (!nome.trim() || ocupado) return;
+    if (limpar && !confirm("Isso vai APAGAR as equipes, provas e resultados atuais. O historico arquivado nao e afetado. Continuar?")) return;
+    setOcupado(true);
+    const ok = await onArquivar(nome.trim());
+    if (ok && limpar) onLimpar();
+    setOcupado(false);
+    if (ok) onFechar();
+  };
+
+  return (
+    <Modal titulo="Arquivar gincana" onFechar={onFechar}>
+      <p className="text-sm mb-4" style={{ color: C.fraco }}>
+        Congela o placar e as provas atuais como uma edicao do historico. O que esta arquivado vira so leitura.
+      </p>
+
+      <Campo rotulo="Nome da edicao" value={nome} onChange={(e) => setNome(e.target.value)} placeholder={`Gincana ${anoAtual}`} />
+
+      <label className="flex items-start gap-2 mb-4 text-sm cursor-pointer" style={{ color: C.medio }}>
+        <input type="checkbox" checked={limpar} onChange={(e) => setLimpar(e.target.checked)} className="mt-0.5" />
+        <span>
+          Limpar a gincana atual depois de arquivar
+          <span className="block text-xs mt-0.5" style={{ color: C.fraco }}>
+            Apaga equipes, provas e resultados para comecar o proximo ano do zero. O historico continua guardado.
+          </span>
+        </span>
+      </label>
+
+      <Confirmar onClick={confirmar} texto={ocupado ? "Arquivando..." : "Arquivar"} desabilitado={!nome.trim() || ocupado} />
+    </Modal>
   );
 }

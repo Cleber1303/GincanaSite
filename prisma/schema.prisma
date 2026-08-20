@@ -95,3 +95,12 @@ model Resultado {
   @@index([provaId])
   @@index([equipeId])
 }
+
+// Edicao arquivada: uma "fotografia" de uma gincana encerrada.
+// Fica fora do apaga-e-recria do PUT /api/estado, entao o historico e imune.
+model Edicao {
+  id       String   @id @default(cuid())
+  nome     String   // ex: "Gincana 2026"
+  dados    String   // JSON: { equipes, provas, resultados }
+  criadoEm DateTime @default(now())
+}

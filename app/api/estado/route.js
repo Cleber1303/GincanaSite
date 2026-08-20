@@ -26,14 +26,23 @@ function posicoesPorPontos(itens) {
 //  - Professor logado: manda tudo (pontos, totais).
 //  - Publico: manda so as colocacoes (geral e por prova), sem os numeros.
 export async function GET(request) {
-  const logado = true;
+  const logado = true; // LIBERADO: todos veem os pontos (para blindar de novo: tokenValido(request))
 
-  const [equipesDb, provasDb, resultadosDb, anexosDb] = await Promise.all([
+  const [equipesDb, provasDb, resultadosDb, anexosDb, edicoesDb] = await Promise.all([
     prisma.equipe.findMany({ include: { integrantes: true }, orderBy: { criadoEm: "asc" } }),
     prisma.prova.findMany({ include: { regras: { orderBy: { posicao: "asc" } } }, orderBy: { criadoEm: "asc" } }),
     prisma.resultado.findMany(),
     prisma.anexo.findMany({ orderBy: { criadoEm: "asc" } }),
+    prisma.edicao.findMany({ orderBy: { criadoEm: "desc" } }),
   ]);
+
+  // Historico: edicoes arquivadas (publicas, so leitura).
+  const edicoes = edicoesDb.map((ed) => ({
+    id: ed.id,
+    nome: ed.nome,
+    criadoEm: ed.criadoEm,
+    dados: (() => { try { return JSON.parse(ed.dados); } catch { return { equipes: [], provas: [], resultados: [] }; } })(),
+  }));
 
   // Anexos sao publicos: aparecem logado ou nao.
   const anexos = anexosDb.map((a) => ({
@@ -78,7 +87,7 @@ export async function GET(request) {
       pontos: r.pontos,
       criadoEm: r.criadoEm,
     }));
-    return NextResponse.json({ equipes, provas, resultados, anexos, publico: false });
+    return NextResponse.json({ equipes, provas, resultados, anexos, edicoes, publico: false });
   }
 
   // ── Publico: calcula colocacoes, remove os pontos ──
@@ -108,7 +117,7 @@ export async function GET(request) {
     }
   }
 
-  return NextResponse.json({ equipes: equipesPublic, provas, resultados, anexos, publico: true });
+  return NextResponse.json({ equipes: equipesPublic, provas, resultados, anexos, edicoes, publico: true });
 }
 
 // PUT /api/estado  — so admin. Recebe o estado inteiro e regrava.
